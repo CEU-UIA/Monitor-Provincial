@@ -996,7 +996,7 @@ except Exception:
                  'font-weight:700;color:white;letter-spacing:-1px;">ceu</span>')
 
 st.markdown(f"""
-<div style="background:#1B2D6B;margin:25px -2rem 0 -2rem;padding:18px 2rem;
+<div style="background:#1B2D6B;margin:30px -2rem 0 -2rem;padding:18px 2rem;
 display:flex;align-items:center;justify-content:space-between;gap:20px;">
   <span style="font-family:'Sora',sans-serif;font-size:1.5rem;font-weight:700;color:white;">
     Monitor Provincial
