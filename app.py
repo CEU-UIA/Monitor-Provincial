@@ -1291,8 +1291,18 @@ with tab_mapa_ind:
 with tab_evol:
 
     col_var_comp, col_provs_comp = st.columns([1,2], gap="medium")
+
+    # ✅ default variable
+    DEFAULT_VAR_EVOL = "Empleo industrial cada 1.000 habitantes"
+
     with col_var_comp:
-        var_comp = st.selectbox("Variable", options=VARIABLES_EVO, key="sel_var_comp")
+        _idx = VARIABLES_EVO.index(DEFAULT_VAR_EVOL) if DEFAULT_VAR_EVOL in VARIABLES_EVO else 0
+        var_comp = st.selectbox(
+            "Variable",
+            options=VARIABLES_EVO,
+            index=_idx,
+            key="sel_var_comp",
+        )
     with col_provs_comp:
         seleccionadas = st.multiselect(
             "Provincias (hasta 4)",
