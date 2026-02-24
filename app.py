@@ -671,7 +671,7 @@ def fig_comp_linea(seleccionadas, variable):
             ))
     fig.update_layout(
         title=dict(
-            text=f"<span style='font-family:Sora,sans-serif;font-size:13px;'>{variable} · Comparativa</span>",
+            text=f"<span style='font-family:Sora,sans-serif;font-size:13px;'>{variable}</span>",
             x=0.01,
         ),
         height=320, margin=dict(t=40,b=80,l=80,r=20),
