@@ -1299,27 +1299,41 @@ with tab_mapa_ind:
 # ══════════════════════════════════════════════
 with tab_evol:
 
-    col_var_comp, col_provs_comp = st.columns([1,2], gap="medium")
+    col_var_comp, col_provs_comp = st.columns([1, 2], gap="medium")
 
-    # ✅ default variable
-    DEFAULT_VAR_EVOL = "Empleo industrial cada 1.000 habitantes"
+    # =========================
+    # DEFAULTS DEL TAB EVOL
+    # =========================
+    DEFAULT_VAR_EVOL = "Cantidad de empresas"   # 👈 AJUSTÁ si en tu Excel se llama distinto
+    DEFAULT_PROVS_EVOL = ["Córdoba", "Santa Fe"]
 
+    # -------- Variable (selectbox)
     with col_var_comp:
-        _idx = VARIABLES_EVO.index(DEFAULT_VAR_EVOL) if DEFAULT_VAR_EVOL in VARIABLES_EVO else 0
+        # si existe la variable default, la usamos; si no, caemos a la primera
+        _idx_var = VARIABLES_EVO.index(DEFAULT_VAR_EVOL) if DEFAULT_VAR_EVOL in VARIABLES_EVO else 0
+
         var_comp = st.selectbox(
             "Variable",
             options=VARIABLES_EVO,
-            index=_idx,
+            index=_idx_var,
             key="sel_var_comp",
         )
+
+    # -------- Provincias (multiselect)
     with col_provs_comp:
+        # armamos defaults solo con las que existan en el Excel
+        _default_provs = [p for p in DEFAULT_PROVS_EVOL if p in PROVINCIAS_LIST]
+        if not _default_provs:
+            _default_provs = PROVINCIAS_LIST[:1] if PROVINCIAS_LIST else []
+
         seleccionadas = st.multiselect(
             "Provincias (hasta 4)",
             options=PROVINCIAS_LIST,
-            default=PROVINCIAS_LIST[:1] if len(PROVINCIAS_LIST)>=1 else PROVINCIAS_LIST,
+            default=_default_provs,
             key="sel_provs_comp",
         )
 
+    # Guards
     if len(seleccionadas) < 1:
         st.info("Seleccioná al menos 1 provincia.")
         st.stop()
@@ -1335,6 +1349,7 @@ with tab_evol:
             config={"displayModeBar": False},
         )
 
+    # ... (desde acá seguí con tu código actual de tabla, etc.)
     # 2) Tabla con los datos que alimentan el gráfico
     #    (filas = período, columnas = provincias)
     rows = []
