@@ -681,8 +681,13 @@ def fig_comp_linea(seleccionadas, variable):
                    rangemode="tozero"),
         plot_bgcolor="white", paper_bgcolor="white",
         font=dict(family="Sora, sans-serif", color="#31333F"),
-        legend=dict(orientation="h", y=-0.3, font=dict(size=11)),
-        showlegend=True,
+        legend=dict(
+            orientation="h",
+            x=0.99, xanchor="right",   # 👈 derecha
+            y=1.18, yanchor="top",     # 👈 arriba, “al lado” del título
+            font=dict(size=11),
+            bgcolor="rgba(255,255,255,0)",
+        ),
     )
     return fig
 
