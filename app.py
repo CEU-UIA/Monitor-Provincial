@@ -1228,7 +1228,16 @@ with tab_mapa_sect:
 with tab_mapa_ind:
 
     opciones_ind = [v for v in MAPA_IND_PERMITIDAS if v in VARIABLES_LIST]
-    var_mapa = st.selectbox("Variable", options=opciones_ind, key="sel_var_mapa")
+    
+    DEFAULT_VAR_MAPA_IND = "Empleo industrial cada 1.000 habitantes"
+    _idx_map = opciones_ind.index(DEFAULT_VAR_MAPA_IND) if DEFAULT_VAR_MAPA_IND in opciones_ind else 0
+    
+    var_mapa = st.selectbox(
+        "Variable",
+        options=opciones_ind,
+        index=_idx_map,
+        key="sel_var_mapa",
+    )
 
     rows_mapa = []
     for prov in PROVINCIAS_LIST:
