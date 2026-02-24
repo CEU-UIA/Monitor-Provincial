@@ -99,6 +99,16 @@ KPI_VAR_EXPO    = "Expo MOA+MOI (M u$s)"                     # exportaciones    
 # Empleo: se busca por coincidencia parcial case-insensitive en VARS_TRIM
 _KPI_PUESTOS_KEYWORD = "empleo industrial"   # substring para encontrar la variable trim
 
+def _is_pct_var(var: str) -> bool:
+    return MAPA_IND_KIND.get(var) == "pct"
+
+def _pctize(v):
+    """Si viene como ratio (0.75) lo pasa a % (75). Si ya viene 75 lo deja."""
+    if v is None or pd.isna(v):
+        return None
+    vv = float(v)
+    return vv * 100 if abs(vv) <= 1.5 else vv
+
 PALETTE = [
     "#1B2D6B","#D4860A","#127070","#C0392B","#7B2D8B",
     "#1A7A4A","#0077B6","#E67E22","#8E44AD","#16A085",
@@ -657,37 +667,48 @@ def fig_barras_h_azul(title, sectores, vals, n=10):
     return fig
 
 def fig_comp_linea(seleccionadas, variable):
+    is_pct = _is_pct_var(variable)
+
     fig = go.Figure()
     for pname in seleccionadas:
         color = PROVINCIAS[pname]["color"]
         periods, values, _ = get_serie(pname, variable)
         if periods:
+            y_plot = [_pctize(v) for v in values] if is_pct else values
+
+            hover = (
+                f"<b>{pname}</b><br>%{{x}}: %{{y:.1f}}%<extra></extra>"
+                if is_pct
+                else f"<b>{pname}</b><br>%{{x}}: %{{y:,.2f}}<extra></extra>"
+            )
+
             fig.add_trace(go.Scatter(
-                x=periods, y=values,
+                x=periods, y=y_plot,
                 mode="lines+markers", name=pname,
                 line=dict(color=color, width=2.5),
                 marker=dict(color=color, size=4),
-                hovertemplate=f"<b>{pname}</b><br>%{{x}}: %{{y:,.2f}}<extra></extra>",
+                hovertemplate=hover,
             ))
+
     fig.update_layout(
         title=dict(
             text=f"<span style='font-family:Sora,sans-serif;font-size:13px;'>{variable}</span>",
             x=0.01,
         ),
-        height=320, margin=dict(t=40,b=80,l=80,r=20),
+        height=320, margin=dict(t=70,b=80,l=80,r=20),
         xaxis=dict(gridcolor="#F0F2F6", tickfont=dict(size=9,family="DM Mono, monospace"),
                    tickangle=-45, nticks=12),
-        yaxis=dict(gridcolor="#F0F2F6", tickfont=dict(size=10,family="DM Mono, monospace"),
-                   rangemode="tozero"),
+        yaxis=dict(
+            gridcolor="#F0F2F6",
+            tickfont=dict(size=10,family="DM Mono, monospace"),
+            rangemode="tozero",
+            ticksuffix="%" if is_pct else "",
+        ),
         plot_bgcolor="white", paper_bgcolor="white",
         font=dict(family="Sora, sans-serif", color="#31333F"),
-        legend=dict(
-            orientation="h",
-            x=0.99, xanchor="right",   # 👈 derecha
-            y=1.18, yanchor="top",     # 👈 arriba, “al lado” del título
-            font=dict(size=11),
-            bgcolor="rgba(255,255,255,0)",
-        ),
+        legend=dict(orientation="h", x=0.99, xanchor="right", y=1.18, yanchor="top",
+                    font=dict(size=11), bgcolor="rgba(255,255,255,0)"),
+        showlegend=True,
     )
     return fig
 
