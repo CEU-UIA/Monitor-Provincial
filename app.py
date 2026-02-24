@@ -1336,7 +1336,7 @@ with tab_evol:
 
         st.markdown(
             '<div style="font-family:\'Sora\',sans-serif;font-size:0.95rem;font-weight:700;'
-            'color:#1B2D6B;margin:1.0rem 0 0.5rem 0;">Datos (lo que se ve en el gráfico)</div>',
+            'color:#1B2D6B;margin:1.0rem 0 0.5rem 0;">Tabla de datos</div>',
             unsafe_allow_html=True,
         )
         st.dataframe(df_show, use_container_width=True, hide_index=True)
