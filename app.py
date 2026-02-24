@@ -848,31 +848,34 @@ def build_map_and_rank(
     # ✅ columna formateada para hover
     df_map["value_fmt"] = df_map["value"].apply(_fmt_value)
 
+    # ✅ IMPORTANTE: usar SOLO filas ploteables (id válido) para que customdata no se corra
+    df_plot = df_map.dropna(subset=["id"]).copy()
+    
+    # Si querés, opcional: avisar cuántas quedaron afuera
+    # dropped = len(df_map) - len(df_plot)
+    
+    # ✅ Pasar custom_data desde px para que quede alineado con el trace
     fig = px.choropleth(
-        df_map,
+        df_plot,
         geojson=geo,
         locations="id",
         featureidkey=feat_key,
         color="value",
         hover_name="provincia",
-        # no mostramos columnas “raw” en hover
-        hover_data={"value": False, "periodo": False, "id": False, "value_fmt": False},
+        custom_data=["value_fmt", "periodo"],
         color_continuous_scale=color_scale,
         labels={"value": "Valor"},
         projection="mercator",
     )
-
-    # ✅ Hover minimalista (2 líneas)
+    
+    # ✅ Hover (mismo formato que tu tabla, ej: 0,9%)
     if hover_simple:
         fig.update_traces(
-            customdata=df_map[["value_fmt"]].to_numpy(),
-            hovertemplate="<b>%{hovertext}</b><br>%{customdata[0]}<extra></extra>",
+            hovertemplate="<b>%{hovertext}</b><br>%{customdata[0]}<extra></extra>"
         )
     else:
-        # hover “normal” pero lindo
         fig.update_traces(
-            customdata=df_map[["value_fmt", "periodo"]].to_numpy(),
-            hovertemplate="<b>%{hovertext}</b><br>%{customdata[0]}<br>%{customdata[1]}<extra></extra>",
+            hovertemplate="<b>%{hovertext}</b><br>%{customdata[0]}<br>%{customdata[1]}<extra></extra>"
         )
 
     fig.update_geos(
