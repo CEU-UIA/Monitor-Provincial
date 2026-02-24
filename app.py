@@ -786,77 +786,73 @@ def build_map_and_rank(
     title_text,
     color_scale="Reds",
     kind="auto",          # "pct" | "int" | "auto"
-    hover_simple=False,   # True => solo Provincia + Valor formateado
+    hover_simple=False,   # True => solo Provincia + Valor
 ):
-    """
-    df_map_in: columns ["provincia","value","periodo"]
-    kind:
-      - "pct": muestra % con 1 decimal
-      - "int": muestra entero (miles)
-      - "auto": intenta decidir (si value <= 1.5 y >=0 => pct, sino int)
-    hover_simple:
-      - True: hover = "Provincia" + "valor_formateado" (2 líneas)
-    """
     if df_map_in is None or df_map_in.empty or geo is None:
         return go.Figure(), pd.DataFrame()
 
-    def _fmt_value(v):
+    # ---------- helpers de formato (para ranking / tabla) ----------
+    def _fmt_rank(v):
         if v is None or pd.isna(v):
             return "—"
-
-        # normalizar strings tipo "70%" o "70,5%"
-        if isinstance(v, str):
-            s = v.strip().replace("%", "").replace(",", ".")
-            try:
-                v = float(s)
-            except:
-                return "—"
-
-        vv = float(v)
+        try:
+            vv = float(v)
+        except:
+            return "—"
 
         if kind == "pct":
-            # ✅ si viene como ratio (0.70) => 70.0%
-            # ✅ si viene como porcentaje (70) => 70.0%
-            pct = vv * 100 if abs(vv) <= 1.5 else vv
-            return fmt_pct_plain(pct, 1)
-
+            # acá asumimos que df_map_in["value"] ya viene en % (0.9 = 0.9%)
+            return fmt_pct_plain(vv, 1)
         if kind == "int":
             return fmt_int_es(vv)
-
-        # auto (si cae acá)
         return fmt_int_es(vv)
 
-    geo_features = geo["features"]
+    # ---------- armar tabla de features del geojson ----------
+    geo_features = geo.get("features", [])
+    if not geo_features:
+        return go.Figure(), pd.DataFrame()
+
+    # elegimos el campo que existe en el geojson para matchear (id / nombre / name)
+    sample = geo_features[0].get("properties", {}) if geo_features else {}
+    feat_key = (
+        "properties.id" if "id" in sample else
+        "properties.nombre" if "nombre" in sample else
+        "properties.name"
+    )
+
     geo_df = pd.DataFrame({
-        "id":        [f["properties"].get("id",    f["properties"].get("ID",
-                       f["properties"].get("fid",  f["properties"].get("FID",
-                       f["properties"].get("nombre", i))))) for i, f in enumerate(geo_features)],
-        "nombre_geo":[f["properties"].get("nombre",f["properties"].get("name",
-                       f["properties"].get("NAME_1","?"))) for f in geo_features],
+        "id": [
+            f.get("properties", {}).get("id",
+            f.get("properties", {}).get("ID",
+            f.get("properties", {}).get("fid",
+            f.get("properties", {}).get("FID",
+            f.get("properties", {}).get("nombre", i)))))
+            for i, f in enumerate(geo_features)
+        ],
+        "nombre_geo": [
+            f.get("properties", {}).get("nombre",
+            f.get("properties", {}).get("name",
+            f.get("properties", {}).get("NAME_1", "?")))
+            for f in geo_features
+        ],
     })
     geo_df["nombre_norm"] = geo_df["nombre_geo"].apply(_norm)
 
-    sample = geo_features[0]["properties"] if geo_features else {}
-    feat_key = "properties.id" if "id" in sample else (
-               "properties.nombre" if "nombre" in sample else "properties.name")
-
+    # ---------- preparar df del mapa y matchear IDs ----------
     df_map = df_map_in.copy()
     df_map["nombre_norm"] = df_map["provincia"].apply(_norm)
     df_map["nombre_norm"] = df_map["nombre_norm"].replace(_ALIAS_GEO)
-    df_map = df_map.merge(geo_df[["id", "nombre_norm"]], on="nombre_norm", how="left")
 
-    # ✅ columna formateada para hover
-    df_map["value_fmt"] = df_map["value"].apply(_fmt_value)
+    df_map = df_map.merge(
+        geo_df[["id", "nombre_norm"]],
+        on="nombre_norm",
+        how="left",
+    )
 
-    # ✅ IMPORTANTE: usar SOLO filas ploteables (id válido) para que customdata no se corra
+    # IMPORTANTÍSIMO: ploteamos SOLO los que tienen id (evita descalces raros)
     df_plot = df_map.dropna(subset=["id"]).copy()
-    
-    # Si querés, opcional: avisar cuántas quedaron afuera
-    # dropped = len(df_map) - len(df_plot)
-    
-    # ✅ IMPORTANTÍSIMO: usar SOLO filas ploteables (id válido) para que customdata no se corra
-    df_plot = df_map.dropna(subset=["id"]).copy()
-    
+
+    # ---------- plot ----------
     fig = px.choropleth(
         df_plot,
         geojson=geo,
@@ -864,19 +860,19 @@ def build_map_and_rank(
         featureidkey=feat_key,
         color="value",
         hover_name="provincia",
-        custom_data=["value_fmt", "periodo"],  # ✅ queda alineado
         color_continuous_scale=color_scale,
         labels={"value": "Valor"},
         projection="mercator",
     )
-    
-    if hover_simple:
+
+    # ✅ HOVER: SIEMPRE desde z (el valor real que pinta el color)
+    if kind == "pct":
         fig.update_traces(
-            hovertemplate="<b>%{hovertext}</b><br>%{customdata[0]}<extra></extra>"
+            hovertemplate="<b>%{hovertext}</b><br>%{z:.1f}%<extra></extra>"
         )
     else:
         fig.update_traces(
-            hovertemplate="<b>%{hovertext}</b><br>%{customdata[0]}<br>%{customdata[1]}<extra></extra>"
+            hovertemplate="<b>%{hovertext}</b><br>%{z:,.0f}<extra></extra>"
         )
 
     fig.update_geos(
@@ -897,17 +893,11 @@ def build_map_and_rank(
         font=dict(family="Sora, sans-serif", color="#31333F"),
     )
 
-    # Ranking
+    # ---------- ranking ----------
     df_rank = df_map_in.copy().sort_values("value", ascending=False).reset_index(drop=True)
     df_rank.index = df_rank.index + 1
     df_rank = df_rank.rename(columns={"provincia": "Provincia", "value": "Valor", "periodo": "Período"})
-
-    if kind == "pct":
-        df_rank["Valor"] = df_rank["Valor"].apply(lambda x: fmt_pct_plain(x, 1) if pd.notna(x) else "—")
-    elif kind == "int":
-        df_rank["Valor"] = df_rank["Valor"].apply(lambda x: fmt_int_es(x) if pd.notna(x) else "—")
-    else:
-        df_rank["Valor"] = df_rank["Valor"].apply(lambda x: _fmt_value(x) if pd.notna(x) else "—")
+    df_rank["Valor"] = df_rank["Valor"].apply(_fmt_rank)
 
     return fig, df_rank
 
