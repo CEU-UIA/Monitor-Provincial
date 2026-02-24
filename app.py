@@ -854,7 +854,9 @@ def build_map_and_rank(
     # Si querés, opcional: avisar cuántas quedaron afuera
     # dropped = len(df_map) - len(df_plot)
     
-    # ✅ Pasar custom_data desde px para que quede alineado con el trace
+    # ✅ IMPORTANTÍSIMO: usar SOLO filas ploteables (id válido) para que customdata no se corra
+    df_plot = df_map.dropna(subset=["id"]).copy()
+    
     fig = px.choropleth(
         df_plot,
         geojson=geo,
@@ -862,13 +864,12 @@ def build_map_and_rank(
         featureidkey=feat_key,
         color="value",
         hover_name="provincia",
-        custom_data=["value_fmt", "periodo"],
+        custom_data=["value_fmt", "periodo"],  # ✅ queda alineado
         color_continuous_scale=color_scale,
         labels={"value": "Valor"},
         projection="mercator",
     )
     
-    # ✅ Hover (mismo formato que tu tabla, ej: 0,9%)
     if hover_simple:
         fig.update_traces(
             hovertemplate="<b>%{hovertext}</b><br>%{customdata[0]}<extra></extra>"
