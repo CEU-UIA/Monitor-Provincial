@@ -877,7 +877,7 @@ def build_map_and_rank(
 
     fig.update_geos(
         visible=False,
-        lataxis_range=[-56, -20],
+        lataxis_range=[-60, -20],
         lonaxis_range=[-75, -52],
     )
     fig.update_layout(
