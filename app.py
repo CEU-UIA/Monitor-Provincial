@@ -69,37 +69,11 @@ SHEET_VAB_RAMAS   = "vabporramas"
 SECTOR_INDUSTRIA  = "Industria manufacturera"
 LABEL_ART         = "Alícuota promedio ART"
 
-# ✅ Variables permitidas en el mapa por indicadores
-MAPA_IND_PERMITIDAS = [
-    "vab_indus",
-    "vab",
-    "expo_moa_moi",
-    "expo",
-    "empresas_indus",
-    "empresas",
-    LABEL_ART,
-]
-
-# ✅ Todas son porcentajes
-MAPA_IND_KIND = {
-    "vab_indus":      "pct",
-    "vab":            "pct",
-    "expo_moa_moi":   "pct",
-    "expo":           "pct",
-    "empresas_indus": "pct",
-    "empresas":       "pct",
-    LABEL_ART:        "pct",
-}
-
-# ✅ Nombres lindos para la UI
-MAPA_IND_LABELS = {
-    "vab_indus":      "Industria / VAB total",
-    "vab":            "VAB total",
-    "expo_moa_moi":   "Expo MOA+MOI / Expo total",
-    "expo":           "Exportaciones totales",
-    "empresas_indus": "Empresas industriales / Total",
-    "empresas":       "Empresas totales",
-    LABEL_ART:        "Alícuota promedio ART",
+# ✅ Los 3 ratios del mapa por indicadores (se calculan on-the-fly)
+MAPA_IND_RATIOS = {
+    "ind_vab":   {"num": "vab_indus",   "den": "vab",  "label": "Industria / VAB total"},
+    "ind_expo":  {"num": "expo_moa_moi","den": "expo",  "label": "Expo MOA+MOI / Expo total"},
+    "ind_emp":   {"num": "empresas_indus","den": "empresas", "label": "Empresas industriales / Total"},
 }
 
 # ✅ Nombres exactos de variables en el Excel
@@ -108,10 +82,9 @@ KPI_VAR_EXPO         = "expo_moa_moi"
 _KPI_PUESTOS_KEYWORD = "empleo_indus"
 
 def _is_pct_var(var: str) -> bool:
-    return MAPA_IND_KIND.get(var) == "pct"
+    return False  # en evol no hay pct hardcodeadas
 
 def _pctize(v):
-    """Si viene como ratio (0.75) lo pasa a % (75). Si ya viene 75 lo deja."""
     if v is None or pd.isna(v):
         return None
     vv = float(v)
@@ -126,7 +99,6 @@ PALETTE = [
 ]
 COLORES_SECT = ["#1B2D6B","#D4860A","#127070","#C0392B","#7B2D8B","#aab0c0"]
 
-# Secuencia fija de meses para ART: nov-20 → oct-25
 def _generar_periodos_art():
     meses = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"]
     result = []
@@ -348,8 +320,6 @@ def _is_excluded_for_evol(v: str) -> bool:
     s = str(v).strip().lower()
     if s == "pob" or "poblacion" in s or "población" in s:
         return True
-    if "cada 1.000" in s or "cada 1000" in s or "por 1000" in s or "por 1.000" in s:
-        return True
     return False
 
 VARIABLES_EVO = [v for v in VARIABLES_LIST if not _is_excluded_for_evol(v)]
@@ -388,6 +358,50 @@ def get_serie(prov, variable):
 def kpi_last(periods, values):
     if not periods: return None, None
     return periods[-1], values[-1]
+
+# ─────────────────────────────────────────────
+# ✅ Calcular ratio para mapa por indicadores
+# ─────────────────────────────────────────────
+def get_ratio_mapa(ratio_key):
+    """
+    Calcula el ratio num/den * 100 para cada provincia,
+    usando el último período común disponible.
+    Devuelve df con [provincia, value, periodo].
+    """
+    cfg = MAPA_IND_RATIOS[ratio_key]
+    var_num = cfg["num"]
+    var_den = cfg["den"]
+
+    rows = []
+    for prov in PROVINCIAS_LIST:
+        p_num, v_num, _ = get_serie(prov, var_num)
+        p_den, v_den, _ = get_serie(prov, var_den)
+
+        if not p_num or not p_den:
+            rows.append({"provincia": prov, "value": None, "periodo": "—"})
+            continue
+
+        # Usar el último período del numerador y buscar ese mismo en el denominador
+        last_period = p_num[-1]
+        last_val_num = v_num[-1]
+
+        # Buscar el valor del denominador en ese mismo período
+        if last_period in p_den:
+            idx = p_den.index(last_period)
+            last_val_den = v_den[idx]
+        else:
+            # Si no coincide el período exacto, usar el último del denominador
+            last_val_den = v_den[-1]
+            last_period  = p_den[-1]
+
+        if last_val_den and not pd.isna(last_val_den) and last_val_den != 0:
+            ratio = (last_val_num / last_val_den) * 100
+        else:
+            ratio = None
+
+        rows.append({"provincia": prov, "value": ratio, "periodo": str(last_period)})
+
+    return pd.DataFrame(rows)
 
 # ─────────────────────────────────────────────
 # VAB industria desde vabporsector
@@ -442,7 +456,6 @@ def get_insight_y_vab(prov_name):
         (DF_VAB_SECTOR["provincia"] == prov_name) &
         (DF_VAB_SECTOR["sector"].str.lower() == SECTOR_INDUSTRIA.lower())
     ]
-
     top2_lower = [s1["sector"].lower()] + ([s2["sector"].lower()] if s2 is not None else [])
 
     if (not ind_row.empty) and (SECTOR_INDUSTRIA.lower() not in top2_lower):
@@ -477,7 +490,6 @@ STYLE_GRID_4 = (
     "gap:0.65rem;"
     "margin-bottom:1.5rem;"
 )
-
 CARD_STYLE = (
     "background:white;"
     "border:1.5px solid #e2e8f4;"
@@ -486,7 +498,6 @@ CARD_STYLE = (
     "border-top:4px solid #1B2D6B;"
     "box-shadow:0 2px 6px rgba(0,0,0,0.04);"
 )
-
 LABEL_STYLE = (
     "font-family:'DM Mono',monospace;"
     "font-size:0.6rem;"
@@ -499,7 +510,6 @@ LABEL_STYLE = (
     "overflow:hidden;"
     "text-overflow:ellipsis;"
 )
-
 VALUE_STYLE = (
     "font-family:'Sora',sans-serif;"
     "font-size:1.15rem;"
@@ -509,7 +519,6 @@ VALUE_STYLE = (
     "margin-bottom:0.2rem;"
     "line-height:1.2;"
 )
-
 VALUE_STYLE_SM = (
     "font-family:'Sora',sans-serif;"
     "font-size:0.95rem;"
@@ -519,7 +528,6 @@ VALUE_STYLE_SM = (
     "margin-bottom:0.2rem;"
     "line-height:1.2;"
 )
-
 PERIOD_STYLE = (
     "font-family:'DM Mono',monospace;"
     "font-size:0.6rem;"
@@ -539,85 +547,41 @@ def _kpi_card(label, value, period):
 def render_4_kpis(prov):
     cards = []
 
-    # 1) VAB industria
     vab_pct, vab_yr = get_vab_industria(prov)
     cards.append(_kpi_card("Industria en el VAB", vab_pct, vab_yr))
 
-    # 2) Empresas industriales
     p, v, _ = get_serie(prov, KPI_VAR_EMP)
     lp, lv  = kpi_last(p, v)
-    cards.append(_kpi_card(
-        "Empresas industriales",
-        fmt_int_es(lv) if lv is not None else "—",
-        str(lp) if lp else "—",
-    ))
+    cards.append(_kpi_card("Empresas industriales",
+                            fmt_int_es(lv) if lv is not None else "—",
+                            str(lp) if lp else "—"))
 
-    # 3) Empleo industrial
     if KPI_VAR_PUESTOS:
         p, v, _ = get_serie(prov, KPI_VAR_PUESTOS)
         lp, lv  = kpi_last(p, v)
-        cards.append(_kpi_card(
-            "Empleo industrial",
-            fmt_int_es(lv) if lv is not None else "—",
-            str(lp) if lp else "—",
-        ))
+        cards.append(_kpi_card("Empleo industrial",
+                                fmt_int_es(lv) if lv is not None else "—",
+                                str(lp) if lp else "—"))
     else:
         cards.append(_kpi_card("Empleo industrial", "—", "—"))
 
-    # 4) Exportaciones
     p, v, _ = get_serie(prov, KPI_VAR_EXPO)
     lp, lv  = kpi_last(p, v)
-    cards.append(_kpi_card(
-        "Expo MOA+MOI (M u$s)",
-        fmt_int_es(lv) if lv is not None else "—",
-        str(lp) if lp else "—",
-    ))
+    cards.append(_kpi_card("Expo MOA+MOI (M u$s)",
+                            fmt_int_es(lv) if lv is not None else "—",
+                            str(lp) if lp else "—"))
 
     return f'<div style="{STYLE_GRID_4}">{"".join(cards)}</div>'
 
 # ─────────────────────────────────────────────
 # Plotly helpers
 # ─────────────────────────────────────────────
-def fig_serie(prov_name, variable, periods, values, color="#1B2D6B"):
-    hover = "<b>%{x}</b><br>%{y:.1f}%<extra></extra>" if variable==LABEL_ART \
-            else "<b>%{x}</b><br>%{y:,.2f}<extra></extra>"
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=periods, y=values,
-        mode="lines+markers",
-        line=dict(color=color, width=2.5),
-        marker=dict(color=color, size=5),
-        fill="tozeroy",
-        fillcolor=hex_to_rgba(color, 0.08),
-        hovertemplate=hover,
-    ))
-    fig.update_layout(
-        title=dict(
-            text=f"<span style='font-family:Sora,sans-serif;font-size:13px;'>{variable} · {prov_name}</span>",
-            x=0.01,
-        ),
-        height=280,
-        margin=dict(t=40, b=50, l=80, r=40),
-        xaxis=dict(gridcolor="#F0F2F6", tickfont=dict(size=9, family="DM Mono, monospace"),
-                   tickangle=-45, nticks=14),
-        yaxis=dict(gridcolor="#F0F2F6", tickfont=dict(size=10, family="DM Mono, monospace"),
-                   rangemode="tozero"),
-        plot_bgcolor="white", paper_bgcolor="white",
-        font=dict(family="Sora, sans-serif", color="#31333F"),
-        showlegend=False,
-    )
-    return fig
-
 def fig_barras_h_azul(title, sectores, vals, n=10):
-    pares = sorted(
-        [(s,v) for s,v in zip(sectores,vals) if v is not None],
-        key=lambda x: x[1],
-    )
+    pares = sorted([(s,v) for s,v in zip(sectores,vals) if v is not None], key=lambda x: x[1])
     nombres_completos = [p[0] for p in pares]
     sect_truncados    = [truncate_label(p[0],30) for p in pares]
     vals_ord          = [float(p[1]) for p in pares]
     maxv = max(vals_ord) if vals_ord else 1.0
-
     n_bars = len(vals_ord)
     azul_oscuro = (27, 45, 107)
     azul_claro  = (173, 198, 230)
@@ -628,15 +592,11 @@ def fig_barras_h_azul(title, sectores, vals, n=10):
         g = int(azul_claro[1] + t * (azul_oscuro[1] - azul_claro[1]))
         b = int(azul_claro[2] + t * (azul_oscuro[2] - azul_claro[2]))
         colores.append(f"rgb({r},{g},{b})")
-
     fig = go.Figure(go.Bar(
-        x=vals_ord, y=sect_truncados,
-        orientation="h",
+        x=vals_ord, y=sect_truncados, orientation="h",
         marker_color=colores,
         text=[f"{v:.1f}%".replace(".",",") for v in vals_ord],
-        textposition="outside",
-        textfont=dict(size=11),
-        cliponaxis=False,
+        textposition="outside", textfont=dict(size=11), cliponaxis=False,
         customdata=nombres_completos,
         hovertemplate="<b>%{customdata}</b><br>%{x:.1f}%<extra></extra>",
     ))
@@ -645,8 +605,7 @@ def fig_barras_h_azul(title, sectores, vals, n=10):
         margin=dict(t=40, b=30, l=120, r=40),
         xaxis=dict(range=[0, maxv*1.06], showgrid=False, showticklabels=False,
                    showline=False, zeroline=False, fixedrange=True),
-        yaxis=dict(tickfont=dict(size=10), automargin=True,
-                   ticklabelposition="outside left"),
+        yaxis=dict(tickfont=dict(size=10), automargin=True, ticklabelposition="outside left"),
         plot_bgcolor="white", paper_bgcolor="white",
         height=max(300, n_bars * 38 + 80),
         font=dict(family="Sora, sans-serif", color="#31333F"),
@@ -655,24 +614,17 @@ def fig_barras_h_azul(title, sectores, vals, n=10):
     return fig
 
 def fig_comp_linea(seleccionadas, variable):
-    is_pct = _is_pct_var(variable)
     fig = go.Figure()
     for pname in seleccionadas:
         color = PROVINCIAS[pname]["color"]
         periods, values, _ = get_serie(pname, variable)
         if periods:
-            y_plot = [_pctize(v) for v in values] if is_pct else values
-            hover = (
-                f"<b>{pname}</b><br>%{{x}}: %{{y:.1f}}%<extra></extra>"
-                if is_pct
-                else f"<b>{pname}</b><br>%{{x}}: %{{y:,.2f}}<extra></extra>"
-            )
             fig.add_trace(go.Scatter(
-                x=periods, y=y_plot,
+                x=periods, y=values,
                 mode="lines+markers", name=pname,
                 line=dict(color=color, width=2.5),
                 marker=dict(color=color, size=4),
-                hovertemplate=hover,
+                hovertemplate=f"<b>{pname}</b><br>%{{x}}: %{{y:,.2f}}<extra></extra>",
             ))
     fig.update_layout(
         title=dict(
@@ -680,14 +632,8 @@ def fig_comp_linea(seleccionadas, variable):
             x=0.01,
         ),
         height=320, margin=dict(t=70,b=80,l=80,r=20),
-        xaxis=dict(gridcolor="#F0F2F6", tickfont=dict(size=9,family="DM Mono, monospace"),
-                   tickangle=-45, nticks=12),
-        yaxis=dict(
-            gridcolor="#F0F2F6",
-            tickfont=dict(size=10,family="DM Mono, monospace"),
-            rangemode="tozero",
-            ticksuffix="%" if is_pct else "",
-        ),
+        xaxis=dict(gridcolor="#F0F2F6", tickfont=dict(size=9,family="DM Mono, monospace"), tickangle=-45, nticks=12),
+        yaxis=dict(gridcolor="#F0F2F6", tickfont=dict(size=10,family="DM Mono, monospace"), rangemode="tozero"),
         plot_bgcolor="white", paper_bgcolor="white",
         font=dict(family="Sora, sans-serif", color="#31333F"),
         legend=dict(orientation="h", x=0.99, xanchor="right", y=1.18, yanchor="top",
@@ -696,74 +642,10 @@ def fig_comp_linea(seleccionadas, variable):
     )
     return fig
 
-def fig_comp_barra(seleccionadas, variable):
-    xs,ys,cs = [],[],[]
-    for pname in seleccionadas:
-        periods, values, _ = get_serie(pname, variable)
-        if periods and values:
-            xs.append(pname); ys.append(values[-1]); cs.append(PROVINCIAS[pname]["color"])
-    if not xs: return go.Figure()
-    ultimo = get_serie(seleccionadas[0], variable)[0]
-    ultimo = ultimo[-1] if ultimo else ""
-    fig = go.Figure(go.Bar(
-        x=xs, y=ys, marker_color=cs,
-        text=[f"{v:,.2f}" for v in ys], textposition="outside",
-        textfont=dict(family="DM Mono, monospace", size=10),
-        hovertemplate="<b>%{x}</b><br>%{y:,.2f}<extra></extra>",
-    ))
-    fig.update_layout(
-        title=dict(
-            text=f"<span style='font-family:Sora,sans-serif;font-size:13px;'>Último dato ({ultimo})</span>",
-            x=0.01,
-        ),
-        height=280, margin=dict(t=40,b=60,l=44,r=20),
-        xaxis=dict(tickfont=dict(size=10), tickangle=-30),
-        yaxis=dict(gridcolor="#F0F2F6", tickfont=dict(size=10,family="DM Mono, monospace"),
-                   rangemode="tozero"),
-        plot_bgcolor="white", paper_bgcolor="white",
-        font=dict(family="Sora, sans-serif", color="#31333F"),
-        showlegend=False,
-    )
-    return fig
-
-def fig_comp_scatter(seleccionadas, variable):
-    xs,ys,nombres,cols = [],[],[],[]
-    for pname in seleccionadas:
-        periods, values, _ = get_serie(pname, variable)
-        if periods and len(values)>=2:
-            last_v = values[-1]
-            prev_v = values[-2]
-            yoy = (last_v/prev_v-1)*100 if prev_v and not pd.isna(prev_v) else None
-            if last_v is not None and yoy is not None:
-                xs.append(last_v); ys.append(yoy)
-                nombres.append(pname); cols.append(PROVINCIAS[pname]["color"])
-    if not xs: return go.Figure()
-    fig = go.Figure(go.Scatter(
-        x=xs, y=ys, mode="markers+text",
-        text=nombres, textposition="top center",
-        marker=dict(color=cols, size=12),
-        hovertemplate="<b>%{text}</b><br>Valor: %{x:,.2f}<br>Var: %{y:.1f}%<extra></extra>",
-    ))
-    fig.update_layout(
-        title=dict(
-            text=f"<span style='font-family:Sora,sans-serif;font-size:13px;'>{variable} vs var. i.a. (%)</span>",
-            x=0.01,
-        ),
-        height=280, margin=dict(t=40,b=44,l=64,r=20),
-        xaxis=dict(title="Valor", gridcolor="#F0F2F6",
-                   tickfont=dict(size=10,family="DM Mono, monospace")),
-        yaxis=dict(title="Var. % i.a.", gridcolor="#F0F2F6",
-                   tickfont=dict(size=10,family="DM Mono, monospace")),
-        plot_bgcolor="white", paper_bgcolor="white",
-        font=dict(family="Sora, sans-serif", color="#31333F"),
-        showlegend=False,
-    )
-    return fig
-
 # ─────────────────────────────────────────────
 # Mapa helper
 # ─────────────────────────────────────────────
-def build_map_and_rank(df_map_in, geo, title_text, color_scale="Reds", kind="auto"):
+def build_map_and_rank(df_map_in, geo, title_text, color_scale="Blues", kind="pct"):
     if df_map_in is None or df_map_in.empty or geo is None:
         return go.Figure(), pd.DataFrame()
 
@@ -810,31 +692,21 @@ def build_map_and_rank(df_map_in, geo, title_text, color_scale="Reds", kind="aut
     df_plot = df_map.dropna(subset=["id"]).copy()
 
     fig = px.choropleth(
-        df_plot,
-        geojson=geo,
-        locations="id",
-        featureidkey=feat_key,
-        color="value",
-        hover_name="provincia",
-        color_continuous_scale=color_scale,
-        labels={"value": "Valor"},
+        df_plot, geojson=geo, locations="id", featureidkey=feat_key,
+        color="value", hover_name="provincia",
+        color_continuous_scale=color_scale, labels={"value": "Valor"},
         projection="mercator",
     )
-
-    if kind == "pct":
-        fig.update_traces(hovertemplate="<b>%{hovertext}</b><br>%{z:.1f}%<extra></extra>")
-    else:
-        fig.update_traces(hovertemplate="<b>%{hovertext}</b><br>%{z:,.0f}<extra></extra>")
-
+    fig.update_traces(hovertemplate="<b>%{hovertext}</b><br>%{z:.1f}%<extra></extra>")
     fig.update_geos(visible=False, lataxis_range=[-60, -22], lonaxis_range=[-75, -52])
     fig.update_layout(
         title=dict(text=title_text, x=0.01),
         margin=dict(t=50, b=10, l=10, r=10),
         height=700,
         coloraxis_colorbar=dict(
-            title=dict(text="Valor", font=dict(size=10, family="DM Mono, monospace")),
+            title=dict(text="%", font=dict(size=10, family="DM Mono, monospace")),
             tickfont=dict(size=9, family="DM Mono, monospace"),
-            len=0.6,
+            ticksuffix="%", len=0.6,
         ),
         paper_bgcolor="white",
         font=dict(family="Sora, sans-serif", color="#31333F"),
@@ -844,7 +716,6 @@ def build_map_and_rank(df_map_in, geo, title_text, color_scale="Reds", kind="aut
     df_rank.index = df_rank.index + 1
     df_rank = df_rank.rename(columns={"provincia": "Provincia", "value": "Valor", "periodo": "Período"})
     df_rank["Valor"] = df_rank["Valor"].apply(_fmt_rank)
-
     return fig, df_rank
 
 # ─────────────────────────────────────────────
@@ -1041,15 +912,12 @@ with tab_mapa_sect:
                     index=sectores_disponibles.index(SECTOR_INDUSTRIA) if SECTOR_INDUSTRIA in sectores_disponibles else 0,
                     key="map_sect_sector",
                 )
-
             is_industria = (str(sector_sel).strip().lower() == SECTOR_INDUSTRIA.lower())
-
             with c2:
                 rama_options = ["Total industria"] + ramas_disponibles if ramas_disponibles else ["Total industria"]
                 rama_sel = st.selectbox(
                     "Seleccioná una rama industrial",
-                    options=rama_options,
-                    key="map_sect_rama",
+                    options=rama_options, key="map_sect_rama",
                     disabled=not is_industria,
                 )
 
@@ -1090,34 +958,30 @@ with tab_mapa_sect:
     )
 
 # ══════════════════════════════════════════════
-# TAB 3 — MAPA POR INDICADORES
+# TAB 3 — MAPA POR INDICADORES (ratios calculados)
 # ══════════════════════════════════════════════
 with tab_mapa_ind:
 
-    opciones_ind = [v for v in MAPA_IND_PERMITIDAS if v in VARIABLES_LIST]
+    opciones_ratio = list(MAPA_IND_RATIOS.keys())
+    labels_ratio   = {k: v["label"] for k, v in MAPA_IND_RATIOS.items()}
 
-    DEFAULT_VAR_MAPA_IND = "empresas_indus"
-    _idx_map = opciones_ind.index(DEFAULT_VAR_MAPA_IND) if DEFAULT_VAR_MAPA_IND in opciones_ind else 0
-
-    var_mapa = st.selectbox(
+    ratio_sel = st.selectbox(
         "Variable",
-        options=opciones_ind,
-        format_func=lambda x: MAPA_IND_LABELS.get(x, x),
-        index=_idx_map,
+        options=opciones_ratio,
+        format_func=lambda x: labels_ratio[x],
+        index=0,
         key="sel_var_mapa",
     )
 
-    rows_mapa = []
-    for prov in PROVINCIAS_LIST:
-        periods, values, _ = get_serie(prov, var_mapa)
-        if periods and values:
-            rows_mapa.append({"provincia": prov, "value": values[-1], "periodo": periods[-1]})
+    with st.spinner("Calculando..."):
+        df_mapa = get_ratio_mapa(ratio_sel)
 
-    if not rows_mapa:
-        st.info(f"No hay datos disponibles para **{MAPA_IND_LABELS.get(var_mapa, var_mapa)}**.")
+    if df_mapa is None or df_mapa.empty or df_mapa["value"].dropna().empty:
+        st.info("No hay datos suficientes para mostrar el mapa.")
     else:
-        df_mapa = pd.DataFrame(rows_mapa)
-        periodo_label = df_mapa["periodo"].iloc[0] if not df_mapa.empty else ""
+        periodo_label = df_mapa["periodo"].dropna().iloc[0] if not df_mapa["periodo"].dropna().empty else ""
+        label_lindo   = labels_ratio[ratio_sel]
+        title = f"<span style='font-family:Sora,sans-serif;font-size:13px;'>{label_lindo} · Mapa provincial ({periodo_label})</span>"
 
         with st.spinner("Cargando mapa..."):
             GEO = load_argentina_geojson()
@@ -1125,19 +989,13 @@ with tab_mapa_ind:
         if GEO is None:
             st.error("⚠️ No se encontró el archivo `data/provincias_ign.geojson`.")
         else:
-            label_lindo = MAPA_IND_LABELS.get(var_mapa, var_mapa)
-            title = f"<span style='font-family:Sora,sans-serif;font-size:13px;'>{label_lindo} · Mapa provincial ({periodo_label})</span>"
-            kind  = MAPA_IND_KIND.get(var_mapa, "int")
-
             fig, df_rank = build_map_and_rank(
                 df_mapa[["provincia","value","periodo"]],
-                GEO, title_text=title, color_scale="Blues", kind=kind,
+                GEO, title_text=title, color_scale="Blues", kind="pct",
             )
-
             with st.container(border=True):
                 st.plotly_chart(fig, use_container_width=True,
                                 config={"displayModeBar": False, "scrollZoom": False, "doubleClick": False})
-
             st.markdown(
                 '<div style="font-family:\'Sora\',sans-serif;font-size:0.9rem;font-weight:600;'
                 'color:#1B2D6B;margin:1.2rem 0 0.5rem 0;">Ranking por provincia</div>',
@@ -1165,10 +1023,7 @@ with tab_evol:
     with col_var_comp:
         _idx_var = VARIABLES_EVO.index(DEFAULT_VAR_EVOL) if DEFAULT_VAR_EVOL in VARIABLES_EVO else 0
         var_comp = st.selectbox(
-            "Variable",
-            options=VARIABLES_EVO,
-            index=_idx_var,
-            key="sel_var_comp",
+            "Variable", options=VARIABLES_EVO, index=_idx_var, key="sel_var_comp",
         )
 
     with col_provs_comp:
@@ -1176,10 +1031,8 @@ with tab_evol:
         if not _default_provs:
             _default_provs = PROVINCIAS_LIST[:1] if PROVINCIAS_LIST else []
         seleccionadas = st.multiselect(
-            "Provincias (hasta 4)",
-            options=PROVINCIAS_LIST,
-            default=_default_provs,
-            key="sel_provs_comp",
+            "Provincias (hasta 4)", options=PROVINCIAS_LIST,
+            default=_default_provs, key="sel_provs_comp",
         )
 
     if len(seleccionadas) < 1:
@@ -1192,8 +1045,7 @@ with tab_evol:
     with st.container(border=True):
         st.plotly_chart(
             fig_comp_linea(seleccionadas, var_comp),
-            use_container_width=True,
-            config={"displayModeBar": False},
+            use_container_width=True, config={"displayModeBar": False},
         )
 
     rows = []
