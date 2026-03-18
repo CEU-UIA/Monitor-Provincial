@@ -7,16 +7,6 @@ import base64
 import json
 
 
-# ══ DEBUG TEMPORAL ══
-import pandas as pd
-df_debug = pd.read_excel("data/vs_code.xlsx", sheet_name="anual", engine="openpyxl")
-variables = df_debug.iloc[:, 1].dropna().unique().tolist()
-st.write("Variables en anual:", variables)
-st.stop()
-# ══ FIN DEBUG ══
-
-
-
 # ─────────────────────────────────────────────
 # Config
 # ─────────────────────────────────────────────
@@ -79,34 +69,43 @@ SHEET_VAB_RAMAS   = "vabporramas"
 SECTOR_INDUSTRIA  = "Industria manufacturera"
 LABEL_ART         = "Alícuota promedio ART"
 
-
+# ✅ Variables permitidas en el mapa por indicadores
 MAPA_IND_PERMITIDAS = [
-    "vab",
-    "empleo",
-    "empleo_indus",
     "vab_indus",
+    "vab",
     "expo_moa_moi",
+    "expo",
     "empresas_indus",
     "empresas",
     LABEL_ART,
 ]
 
+# ✅ Todas son porcentajes
 MAPA_IND_KIND = {
     "vab_indus":      "pct",
+    "vab":            "pct",
     "expo_moa_moi":   "pct",
+    "expo":           "pct",
+    "empresas_indus": "pct",
+    "empresas":       "pct",
     LABEL_ART:        "pct",
-    "vab":            "int",
-    "empleo":         "int",
-    "empleo_indus":   "int",
-    "empresas_indus": "int",
-    "empresas":       "int",
 }
 
-# Nombres exactos de variables en el Excel para las 4 KPI cards
-KPI_VAR_EMP     = "empresas_indus"        # empresas industriales  → anual
-KPI_VAR_EXPO    = "expo_moa_moi"                     # exportaciones          → anual
-# Empleo: se busca por coincidencia parcial case-insensitive en VARS_TRIM
-_KPI_PUESTOS_KEYWORD = "empleo_indus"   # substring para encontrar la variable trim
+# ✅ Nombres lindos para la UI
+MAPA_IND_LABELS = {
+    "vab_indus":      "Industria / VAB total",
+    "vab":            "VAB total",
+    "expo_moa_moi":   "Expo MOA+MOI / Expo total",
+    "expo":           "Exportaciones totales",
+    "empresas_indus": "Empresas industriales / Total",
+    "empresas":       "Empresas totales",
+    LABEL_ART:        "Alícuota promedio ART",
+}
+
+# ✅ Nombres exactos de variables en el Excel
+KPI_VAR_EMP          = "empresas_indus"
+KPI_VAR_EXPO         = "expo_moa_moi"
+_KPI_PUESTOS_KEYWORD = "empleo_indus"
 
 def _is_pct_var(var: str) -> bool:
     return MAPA_IND_KIND.get(var) == "pct"
@@ -136,14 +135,13 @@ def _generar_periodos_art():
             label = f"{m}-{str(yr)[2:]}"
             order = yr * 100 + i
             result.append((label, order))
-    # filtrar nov-20 en adelante hasta oct-25
     result = [(l, o) for l, o in result if o >= 202011 and o <= 202510]
     return result
 
-PERIODOS_ART = _generar_periodos_art()  # lista de (label, order_int)
-PERIODOS_ART_LABELS  = [p[0] for p in PERIODOS_ART]
-PERIODOS_ART_ORDERS  = [p[1] for p in PERIODOS_ART]
-N_PERIODOS_ART       = len(PERIODOS_ART_LABELS)   # debería ser 60
+PERIODOS_ART        = _generar_periodos_art()
+PERIODOS_ART_LABELS = [p[0] for p in PERIODOS_ART]
+PERIODOS_ART_ORDERS = [p[1] for p in PERIODOS_ART]
+N_PERIODOS_ART      = len(PERIODOS_ART_LABELS)
 
 # ─────────────────────────────────────────────
 # Helpers generales
@@ -228,15 +226,8 @@ def load_trim(file_path, sheet_name):
 
 @st.cache_data(show_spinner=False)
 def load_art(file_path, sheet_name, label):
-    """
-    Lee la hoja ART ignorando completamente los encabezados de columna.
-    Col 0 = provincia, col 1..N = valores mensuales en orden (nov-20 → oct-25).
-    Los valores pueden ser float 0.034 (= 3,4%) o string "3,4%" — los normaliza a %.
-    """
     df = pd.read_excel(file_path, sheet_name=sheet_name, engine="openpyxl", header=None)
-
     df_data = df.iloc[1:].copy().reset_index(drop=True)
-
     col_prov = 0
     df_data[col_prov] = df_data[col_prov].astype(str).str.strip()
     df_data = df_data[~df_data[col_prov].str.lower().isin(["nan","none",""])]
@@ -290,13 +281,11 @@ _ALIAS_GEO = {
 
 @st.cache_data(show_spinner=False)
 def load_argentina_geojson():
-    """Carga provincias_ign.geojson desde data/. Fallback: intenta descarga."""
     import os, urllib.request
     for path in ["data/provincias_ign.geojson", "data/argentina.geojson", "provincias_ign.geojson"]:
         if os.path.exists(path):
             with open(path, encoding="utf-8") as f:
                 return json.load(f)
-    # Intentar descarga desde IGN
     urls = [
         "https://raw.githubusercontent.com/codeforgermany/click_that_hood/main/public/data/argentina.geojson",
         "https://servicios.ign.gob.ar/geoserver/IGN/ows?service=WFS&version=2.0.0&request=GetFeature&typeName=IGN%3Aprovincias&outputFormat=application%2Fjson&srsName=EPSG%3A4326",
@@ -355,14 +344,9 @@ VARS_TRIM  = sorted(DF_TRIM["variable"].unique().tolist())  if TRIM_OK  and not 
 VARS_ART   = [LABEL_ART] if ART_OK and not DF_ART.empty else []
 VARIABLES_LIST = VARS_ANUAL + VARS_TRIM + VARS_ART
 
-# ─────────────────────────────────────────────
-# Variables para TAB Evolución (excluir las de 1 solo dato)
-# - fuera: Población
-# - fuera: indicadores "cada 1.000" / "por 1000" / "por 1.000"
-# ─────────────────────────────────────────────
 def _is_excluded_for_evol(v: str) -> bool:
     s = str(v).strip().lower()
-    if "poblacion" in s or "población" in s:
+    if s == "pob" or "poblacion" in s or "población" in s:
         return True
     if "cada 1.000" in s or "cada 1000" in s or "por 1000" in s or "por 1.000" in s:
         return True
@@ -370,7 +354,6 @@ def _is_excluded_for_evol(v: str) -> bool:
 
 VARIABLES_EVO = [v for v in VARIABLES_LIST if not _is_excluded_for_evol(v)]
 
-# Resolver nombre real de "Empleo industrial" en VARS_TRIM (match parcial case-insensitive)
 KPI_VAR_PUESTOS = next(
     (v for v in VARS_TRIM if _KPI_PUESTOS_KEYWORD in v.lower()),
     None
@@ -403,7 +386,6 @@ def get_serie(prov, variable):
         return sub["period"].tolist(), sub["value"].tolist(), sub["period_num"].tolist()
 
 def kpi_last(periods, values):
-    """Devuelve (last_period, last_value)."""
     if not periods: return None, None
     return periods[-1], values[-1]
 
@@ -411,7 +393,6 @@ def kpi_last(periods, values):
 # VAB industria desde vabporsector
 # ─────────────────────────────────────────────
 def get_vab_industria(prov):
-    """Devuelve (pct_str, año_str) del peso de industria manufacturera en el VAB."""
     if not VAB_SECT_OK or DF_VAB_SECTOR.empty:
         return "—", "—"
     df_p = DF_VAB_SECTOR[DF_VAB_SECTOR["provincia"]==prov].copy()
@@ -475,7 +456,6 @@ def get_insight_y_vab(prov_name):
     if not top_ramas.empty:
         r1 = top_ramas.iloc[0]
         r2 = top_ramas.iloc[1] if len(top_ramas) > 1 else None
-
         texto += f" Las principales ramas industriales son <strong>{r1['sector']}</strong> ({fmt(r1['pct'])} del VAB industrial)"
         if r2 is not None:
             texto += f" y <strong>{r2['sector']}</strong> ({fmt(r2['pct'])})."
@@ -489,7 +469,7 @@ def get_insight_y_vab(prov_name):
     )
 
 # ─────────────────────────────────────────────
-# 4 KPI cards — blanco + acento azul (label / valor / período)
+# 4 KPI cards
 # ─────────────────────────────────────────────
 STYLE_GRID_4 = (
     "display:grid;"
@@ -559,11 +539,11 @@ def _kpi_card(label, value, period):
 def render_4_kpis(prov):
     cards = []
 
-    # 1) VAB industria — desde vabporsector
+    # 1) VAB industria
     vab_pct, vab_yr = get_vab_industria(prov)
     cards.append(_kpi_card("Industria en el VAB", vab_pct, vab_yr))
 
-    # 2) Empresas industriales — desde anual
+    # 2) Empresas industriales
     p, v, _ = get_serie(prov, KPI_VAR_EMP)
     lp, lv  = kpi_last(p, v)
     cards.append(_kpi_card(
@@ -572,7 +552,7 @@ def render_4_kpis(prov):
         str(lp) if lp else "—",
     ))
 
-    # 3) Empleo industrial — desde trim (nombre resuelto dinámicamente)
+    # 3) Empleo industrial
     if KPI_VAR_PUESTOS:
         p, v, _ = get_serie(prov, KPI_VAR_PUESTOS)
         lp, lv  = kpi_last(p, v)
@@ -584,7 +564,7 @@ def render_4_kpis(prov):
     else:
         cards.append(_kpi_card("Empleo industrial", "—", "—"))
 
-    # 4) Exportaciones — desde anual
+    # 4) Exportaciones
     p, v, _ = get_serie(prov, KPI_VAR_EXPO)
     lp, lv  = kpi_last(p, v)
     cards.append(_kpi_card(
@@ -629,7 +609,6 @@ def fig_serie(prov_name, variable, periods, values, color="#1B2D6B"):
     return fig
 
 def fig_barras_h_azul(title, sectores, vals, n=10):
-    """Barras horizontales con gradiente de azul oscuro a azul claro."""
     pares = sorted(
         [(s,v) for s,v in zip(sectores,vals) if v is not None],
         key=lambda x: x[1],
@@ -640,11 +619,11 @@ def fig_barras_h_azul(title, sectores, vals, n=10):
     maxv = max(vals_ord) if vals_ord else 1.0
 
     n_bars = len(vals_ord)
-    azul_oscuro = (27, 45, 107)   # #1B2D6B
-    azul_claro  = (173, 198, 230) # #ADC6E6
+    azul_oscuro = (27, 45, 107)
+    azul_claro  = (173, 198, 230)
     colores = []
     for i in range(n_bars):
-        t = i / max(n_bars - 1, 1)  # 0 = más bajo (claro), 1 = más alto (oscuro)
+        t = i / max(n_bars - 1, 1)
         r = int(azul_claro[0] + t * (azul_oscuro[0] - azul_claro[0]))
         g = int(azul_claro[1] + t * (azul_oscuro[1] - azul_claro[1]))
         b = int(azul_claro[2] + t * (azul_oscuro[2] - azul_claro[2]))
@@ -677,20 +656,17 @@ def fig_barras_h_azul(title, sectores, vals, n=10):
 
 def fig_comp_linea(seleccionadas, variable):
     is_pct = _is_pct_var(variable)
-
     fig = go.Figure()
     for pname in seleccionadas:
         color = PROVINCIAS[pname]["color"]
         periods, values, _ = get_serie(pname, variable)
         if periods:
             y_plot = [_pctize(v) for v in values] if is_pct else values
-
             hover = (
                 f"<b>{pname}</b><br>%{{x}}: %{{y:.1f}}%<extra></extra>"
                 if is_pct
                 else f"<b>{pname}</b><br>%{{x}}: %{{y:,.2f}}<extra></extra>"
             )
-
             fig.add_trace(go.Scatter(
                 x=periods, y=y_plot,
                 mode="lines+markers", name=pname,
@@ -698,7 +674,6 @@ def fig_comp_linea(seleccionadas, variable):
                 marker=dict(color=color, size=4),
                 hovertemplate=hover,
             ))
-
     fig.update_layout(
         title=dict(
             text=f"<span style='font-family:Sora,sans-serif;font-size:13px;'>{variable}</span>",
@@ -786,42 +761,23 @@ def fig_comp_scatter(seleccionadas, variable):
     return fig
 
 # ─────────────────────────────────────────────
-# Mapa helper (reutilizable)
+# Mapa helper
 # ─────────────────────────────────────────────
-
-def build_map_and_rank(
-    df_map_in,
-    geo,
-    title_text,
-    color_scale="Reds",
-    kind="auto",          # "pct" | "int" | "auto"
-    hover_simple=False,   # True => solo Provincia + Valor
-):
+def build_map_and_rank(df_map_in, geo, title_text, color_scale="Reds", kind="auto"):
     if df_map_in is None or df_map_in.empty or geo is None:
         return go.Figure(), pd.DataFrame()
 
-    # ---------- helpers de formato (para ranking / tabla) ----------
     def _fmt_rank(v):
-        if v is None or pd.isna(v):
-            return "—"
-        try:
-            vv = float(v)
-        except:
-            return "—"
-
-        if kind == "pct":
-            # acá asumimos que df_map_in["value"] ya viene en % (0.9 = 0.9%)
-            return fmt_pct_plain(vv, 1)
-        if kind == "int":
-            return fmt_int_es(vv)
+        if v is None or pd.isna(v): return "—"
+        try: vv = float(v)
+        except: return "—"
+        if kind == "pct": return fmt_pct_plain(vv, 1)
         return fmt_int_es(vv)
 
-    # ---------- armar tabla de features del geojson ----------
     geo_features = geo.get("features", [])
     if not geo_features:
         return go.Figure(), pd.DataFrame()
 
-    # elegimos el campo que existe en el geojson para matchear (id / nombre / name)
     sample = geo_features[0].get("properties", {}) if geo_features else {}
     feat_key = (
         "properties.id" if "id" in sample else
@@ -847,21 +803,12 @@ def build_map_and_rank(
     })
     geo_df["nombre_norm"] = geo_df["nombre_geo"].apply(_norm)
 
-    # ---------- preparar df del mapa y matchear IDs ----------
     df_map = df_map_in.copy()
     df_map["nombre_norm"] = df_map["provincia"].apply(_norm)
     df_map["nombre_norm"] = df_map["nombre_norm"].replace(_ALIAS_GEO)
-
-    df_map = df_map.merge(
-        geo_df[["id", "nombre_norm"]],
-        on="nombre_norm",
-        how="left",
-    )
-
-    # IMPORTANTÍSIMO: ploteamos SOLO los que tienen id (evita descalces raros)
+    df_map = df_map.merge(geo_df[["id", "nombre_norm"]], on="nombre_norm", how="left")
     df_plot = df_map.dropna(subset=["id"]).copy()
 
-    # ---------- plot ----------
     fig = px.choropleth(
         df_plot,
         geojson=geo,
@@ -874,21 +821,12 @@ def build_map_and_rank(
         projection="mercator",
     )
 
-    # ✅ HOVER: SIEMPRE desde z (el valor real que pinta el color)
     if kind == "pct":
-        fig.update_traces(
-            hovertemplate="<b>%{hovertext}</b><br>%{z:.1f}%<extra></extra>"
-        )
+        fig.update_traces(hovertemplate="<b>%{hovertext}</b><br>%{z:.1f}%<extra></extra>")
     else:
-        fig.update_traces(
-            hovertemplate="<b>%{hovertext}</b><br>%{z:,.0f}<extra></extra>"
-        )
+        fig.update_traces(hovertemplate="<b>%{hovertext}</b><br>%{z:,.0f}<extra></extra>")
 
-    fig.update_geos(
-        visible=False,
-        lataxis_range=[-60, -22],
-        lonaxis_range=[-75, -52],
-    )
+    fig.update_geos(visible=False, lataxis_range=[-60, -22], lonaxis_range=[-75, -52])
     fig.update_layout(
         title=dict(text=title_text, x=0.01),
         margin=dict(t=50, b=10, l=10, r=10),
@@ -902,7 +840,6 @@ def build_map_and_rank(
         font=dict(family="Sora, sans-serif", color="#31333F"),
     )
 
-    # ---------- ranking ----------
     df_rank = df_map_in.copy().sort_values("value", ascending=False).reset_index(drop=True)
     df_rank.index = df_rank.index + 1
     df_rank = df_rank.rename(columns={"provincia": "Provincia", "value": "Valor", "periodo": "Período"})
@@ -914,78 +851,50 @@ def build_map_and_rank(
 # VAB: utilitarios para mapas de sectores/ramas
 # ─────────────────────────────────────────────
 def _vab_last_col(df_tabla):
-    if df_tabla is None or df_tabla.empty:
-        return None
+    if df_tabla is None or df_tabla.empty: return None
     return df_tabla.columns[-1]
 
 def build_df_map_sector_share(sector_name: str):
-    """
-    Devuelve df con ["provincia","value","periodo"] donde value es % del sector / VAB total provincial
-    usando DF_VAB_SECTOR última columna.
-    """
-    if not VAB_SECT_OK or DF_VAB_SECTOR.empty:
-        return pd.DataFrame()
-
+    if not VAB_SECT_OK or DF_VAB_SECTOR.empty: return pd.DataFrame()
     col_last = _vab_last_col(DF_VAB_SECTOR)
-    if col_last is None:
-        return pd.DataFrame()
-
+    if col_last is None: return pd.DataFrame()
     rows = []
     for prov in PROVINCIAS_LIST:
         df_p = DF_VAB_SECTOR[DF_VAB_SECTOR["provincia"] == prov].copy()
-        if df_p.empty:
-            continue
+        if df_p.empty: continue
         df_p["vab"] = pd.to_numeric(df_p[col_last], errors="coerce")
         total = df_p["vab"].sum()
         if not total or pd.isna(total) or total == 0:
-            rows.append({"provincia": prov, "value": None, "periodo": str(col_last)})
-            continue
+            rows.append({"provincia": prov, "value": None, "periodo": str(col_last)}); continue
         sel = df_p[df_p["sector"].str.lower() == str(sector_name).strip().lower()]
         if sel.empty:
-            rows.append({"provincia": prov, "value": None, "periodo": str(col_last)})
-            continue
+            rows.append({"provincia": prov, "value": None, "periodo": str(col_last)}); continue
         val = pd.to_numeric(sel["vab"].values[0], errors="coerce")
         pct = (val / total * 100) if (pd.notna(val) and total > 0) else None
         rows.append({"provincia": prov, "value": pct, "periodo": str(col_last)})
-
     return pd.DataFrame(rows)
 
 def build_df_map_industria_share_total():
-    """
-    Mapa de: Industria manufacturera / VAB total provincial (%) usando DF_VAB_SECTOR.
-    """
     return build_df_map_sector_share(SECTOR_INDUSTRIA)
 
 def build_df_map_rama_share_industrial(rama_name: str):
-    """
-    Devuelve df con ["provincia","value","periodo"] donde value es:
-    rama / VAB industrial provincial (%), usando DF_VAB_RAMAS última columna.
-    """
-    if not VAB_RAMAS_OK or DF_VAB_RAMAS.empty:
-        return pd.DataFrame()
-
+    if not VAB_RAMAS_OK or DF_VAB_RAMAS.empty: return pd.DataFrame()
     col_last = _vab_last_col(DF_VAB_RAMAS)
-    if col_last is None:
-        return pd.DataFrame()
-
+    if col_last is None: return pd.DataFrame()
     rows = []
     for prov in PROVINCIAS_LIST:
         df_p = DF_VAB_RAMAS[DF_VAB_RAMAS["provincia"] == prov].copy()
-        if df_p.empty:
-            continue
+        if df_p.empty: continue
         df_p["vab"] = pd.to_numeric(df_p[col_last], errors="coerce")
         total_ind = df_p["vab"].sum()
         if not total_ind or pd.isna(total_ind) or total_ind == 0:
-            rows.append({"provincia": prov, "value": None, "periodo": str(col_last)})
-            continue
+            rows.append({"provincia": prov, "value": None, "periodo": str(col_last)}); continue
         sel = df_p[df_p["sector"].str.lower() == str(rama_name).strip().lower()]
         if sel.empty:
-            rows.append({"provincia": prov, "value": None, "periodo": str(col_last)})
-            continue
+            rows.append({"provincia": prov, "value": None, "periodo": str(col_last)}); continue
         val = pd.to_numeric(sel["vab"].values[0], errors="coerce")
         pct = (val / total_ind * 100) if (pd.notna(val) and total_ind > 0) else None
         rows.append({"provincia": prov, "value": pct, "periodo": str(col_last)})
-
     return pd.DataFrame(rows)
 
 # ─────────────────────────────────────────────
@@ -1012,7 +921,6 @@ font-size:12px;color:#6b6f7e;border-bottom:1px solid #E6E9EF;font-family:'Sora',
 </div>
 """, unsafe_allow_html=True)
 
-
 # ─────────────────────────────────────────────
 # Guard
 # ─────────────────────────────────────────────
@@ -1024,11 +932,7 @@ if not PROVINCIAS:
     st.stop()
 
 # ─────────────────────────────────────────────
-# Tabs — nuevo orden + renombre
-# 1) Ficha provincial
-# 2) Mapa por sectores (nuevo)
-# 3) Mapa por indicadores (antes mapa)
-# 4) Evolución de variables (antes evol)
+# Tabs
 # ─────────────────────────────────────────────
 tab_ficha, tab_mapa_sect, tab_mapa_ind, tab_evol = st.tabs([
     "📋 Fichas",
@@ -1048,8 +952,7 @@ with tab_ficha:
     st.markdown(
         f'<div style="font-family:\'Sora\',sans-serif;font-size:2.4rem;font-weight:700;'
         f'color:#1B2D6B;letter-spacing:-0.03em;line-height:1;margin:0.5rem 0 1.2rem 0;">'
-        f'{prov_name}'
-        f'</div>',
+        f'{prov_name}</div>',
         unsafe_allow_html=True,
     )
 
@@ -1058,12 +961,8 @@ with tab_ficha:
     vab_top10_sect  = resultado[1]
     vab_top10_ramas = resultado[2]
 
-
     st.markdown(render_4_kpis(prov_name), unsafe_allow_html=True)
 
-    # ─────────────────────────────────────────────
-    # Estructura económica (VAB por sector / ramas)
-    # ─────────────────────────────────────────────
     st.markdown(
         '<div style="font-family:\'Sora\',sans-serif;font-size:1.2rem;font-weight:700;'
         'color:#1B2D6B;letter-spacing:-0.02em;margin-bottom:1rem;">Estructura económica</div>',
@@ -1072,50 +971,34 @@ with tab_ficha:
 
     if txt_insight:
         st.markdown(
-            f'<div style="background:#f8fafc;'
-            f'border:1px solid #e2e8f4;'
-            f'border-left:4px solid #1B2D6B;'
-            f'border-radius:10px;'
-            f'padding:0.85rem 1.1rem;'
-            f'font-size:0.875rem;'
-            f'color:#334155;'
-            f'line-height:1.6;'
-            f'display:flex;gap:0.75rem;align-items:flex-start;'
-            f'margin:0.5rem 0 1.2rem 0;">'
+            f'<div style="background:#f8fafc;border:1px solid #e2e8f4;'
+            f'border-left:4px solid #1B2D6B;border-radius:10px;padding:0.85rem 1.1rem;'
+            f'font-size:0.875rem;color:#334155;line-height:1.6;'
+            f'display:flex;gap:0.75rem;align-items:flex-start;margin:0.5rem 0 1.2rem 0;">'
             f'<span style="font-size:1rem;flex-shrink:0;margin-top:1px">💡</span>'
             f'<span style="font-family:\'Sora\',sans-serif;">{txt_insight}</span>'
             f'</div>',
             unsafe_allow_html=True,
         )
 
-    # Gráfico VAB por sector — fila completa
     with st.container(border=True):
         if vab_top10_sect is not None and not vab_top10_sect.empty:
             st.plotly_chart(
-                fig_barras_h_azul(
-                    "Composición VAB por sector (%)",
-                    vab_top10_sect["sector"].tolist(),
-                    vab_top10_sect["pct"].tolist(),
-                    n=10,
-                ),
-                use_container_width=True,
-                config={"displayModeBar": False},
+                fig_barras_h_azul("Composición VAB por sector (%)",
+                                  vab_top10_sect["sector"].tolist(),
+                                  vab_top10_sect["pct"].tolist(), n=10),
+                use_container_width=True, config={"displayModeBar": False},
             )
         else:
             st.info("Sin datos de VAB sectorial.")
 
-    # Gráfico VAB por ramas — fila completa
     with st.container(border=True):
         if vab_top10_ramas is not None and not vab_top10_ramas.empty:
             st.plotly_chart(
-                fig_barras_h_azul(
-                    "Principales ramas industriales (%)",
-                    vab_top10_ramas["sector"].tolist(),
-                    vab_top10_ramas["pct"].tolist(),
-                    n=10,
-                ),
-                use_container_width=True,
-                config={"displayModeBar": False},
+                fig_barras_h_azul("Principales ramas industriales (%)",
+                                  vab_top10_ramas["sector"].tolist(),
+                                  vab_top10_ramas["pct"].tolist(), n=10),
+                use_container_width=True, config={"displayModeBar": False},
             )
         else:
             st.info("Sin datos de ramas industriales.")
@@ -1128,28 +1011,22 @@ with tab_ficha:
     )
 
 # ══════════════════════════════════════════════
-# TAB 2 — MAPA ARGENTINO POR SECTORES (NUEVO)
+# TAB 2 — MAPA POR SECTORES
 # ══════════════════════════════════════════════
 with tab_mapa_sect:
 
     if not VAB_SECT_OK or DF_VAB_SECTOR.empty:
         st.info("No hay datos disponibles de VAB por sector (`vabporsector`).")
     else:
-        # Cargar geo una vez por tab
         with st.spinner("Cargando mapa..."):
             GEO = load_argentina_geojson()
 
         if GEO is None:
-            st.error(
-                "⚠️ No se encontró el archivo `data/provincias_ign.geojson`. "
-                "Descargalo del IGN o de la URL que te pasé y ponelo en la carpeta `data/`."
-            )
+            st.error("⚠️ No se encontró el archivo `data/provincias_ign.geojson`.")
         else:
-            # Selector de sector y (condicional) de rama en la MISMA fila
             sectores_disponibles = sorted(
                 DF_VAB_SECTOR["sector"].dropna().astype(str).str.strip().unique().tolist()
             )
-
             ramas_disponibles = []
             if VAB_RAMAS_OK and not DF_VAB_RAMAS.empty:
                 ramas_disponibles = sorted(
@@ -1168,7 +1045,6 @@ with tab_mapa_sect:
             is_industria = (str(sector_sel).strip().lower() == SECTOR_INDUSTRIA.lower())
 
             with c2:
-                # Siempre visible; gris (disabled) salvo industria
                 rama_options = ["Total industria"] + ramas_disponibles if ramas_disponibles else ["Total industria"]
                 rama_sel = st.selectbox(
                     "Seleccioná una rama industrial",
@@ -1177,7 +1053,6 @@ with tab_mapa_sect:
                     disabled=not is_industria,
                 )
 
-            # Construir df para mapa (siempre en %)
             if not is_industria:
                 df_map = build_df_map_sector_share(sector_sel)
                 periodo_label = df_map["periodo"].iloc[0] if (df_map is not None and not df_map.empty) else ""
@@ -1195,22 +1070,11 @@ with tab_mapa_sect:
             if df_map is None or df_map.empty or df_map["value"].dropna().empty:
                 st.info("No hay datos suficientes para mostrar el mapa con esta selección.")
             else:
-                fig, df_rank = build_map_and_rank(
-                    df_map,
-                    GEO,
-                    title_text=titulo,
-                    color_scale="Blues",
-                    kind="pct",
-                    hover_simple=True,   # ✅ Provincia + "10,2%"
-                )
-
+                fig, df_rank = build_map_and_rank(df_map, GEO, title_text=titulo,
+                                                   color_scale="Blues", kind="pct")
                 with st.container(border=True):
-                    st.plotly_chart(
-                        fig,
-                        use_container_width=True,
-                        config={"displayModeBar": False, "scrollZoom": False, "doubleClick": False},
-                    )
-
+                    st.plotly_chart(fig, use_container_width=True,
+                                    config={"displayModeBar": False, "scrollZoom": False, "doubleClick": False})
                 st.markdown(
                     '<div style="font-family:\'Sora\',sans-serif;font-size:0.9rem;font-weight:600;'
                     'color:#1B2D6B;margin:1.2rem 0 0.5rem 0;">Ranking por provincia</div>',
@@ -1226,18 +1090,19 @@ with tab_mapa_sect:
     )
 
 # ══════════════════════════════════════════════
-# TAB 3 — MAPA ARGENTINO POR INDICADORES (RENOMBRADO)
+# TAB 3 — MAPA POR INDICADORES
 # ══════════════════════════════════════════════
 with tab_mapa_ind:
 
     opciones_ind = [v for v in MAPA_IND_PERMITIDAS if v in VARIABLES_LIST]
-    
-    DEFAULT_VAR_MAPA_IND = "Empleo industrial cada 1.000 habitantes"
+
+    DEFAULT_VAR_MAPA_IND = "empresas_indus"
     _idx_map = opciones_ind.index(DEFAULT_VAR_MAPA_IND) if DEFAULT_VAR_MAPA_IND in opciones_ind else 0
-    
+
     var_mapa = st.selectbox(
         "Variable",
         options=opciones_ind,
+        format_func=lambda x: MAPA_IND_LABELS.get(x, x),
         index=_idx_map,
         key="sel_var_mapa",
     )
@@ -1249,7 +1114,7 @@ with tab_mapa_ind:
             rows_mapa.append({"provincia": prov, "value": values[-1], "periodo": periods[-1]})
 
     if not rows_mapa:
-        st.info(f"No hay datos disponibles para **{var_mapa}**.")
+        st.info(f"No hay datos disponibles para **{MAPA_IND_LABELS.get(var_mapa, var_mapa)}**.")
     else:
         df_mapa = pd.DataFrame(rows_mapa)
         periodo_label = df_mapa["periodo"].iloc[0] if not df_mapa.empty else ""
@@ -1258,30 +1123,20 @@ with tab_mapa_ind:
             GEO = load_argentina_geojson()
 
         if GEO is None:
-            st.error(
-                "⚠️ No se encontró el archivo `data/provincias_ign.geojson`. "
-                "Descargalo del IGN o de la URL que te pasé y ponelo en la carpeta `data/`."
-            )
+            st.error("⚠️ No se encontró el archivo `data/provincias_ign.geojson`.")
         else:
-            title = f"<span style='font-family:Sora,sans-serif;font-size:13px;'>{var_mapa} · Mapa provincial ({periodo_label})</span>"
-
-            kind = MAPA_IND_KIND.get(var_mapa, "int")
+            label_lindo = MAPA_IND_LABELS.get(var_mapa, var_mapa)
+            title = f"<span style='font-family:Sora,sans-serif;font-size:13px;'>{label_lindo} · Mapa provincial ({periodo_label})</span>"
+            kind  = MAPA_IND_KIND.get(var_mapa, "int")
 
             fig, df_rank = build_map_and_rank(
                 df_mapa[["provincia","value","periodo"]],
-                GEO,
-                title_text=title,
-                color_scale="Blues",     # ✅ mismo look
-                kind=kind,               # ✅ % solo cuando corresponde
-                hover_simple=True,       # ✅ Provincia + valor (unidad correcta)
+                GEO, title_text=title, color_scale="Blues", kind=kind,
             )
 
             with st.container(border=True):
-                st.plotly_chart(
-                    fig,
-                    use_container_width=True,
-                    config={"displayModeBar": False, "scrollZoom": False, "doubleClick": False},
-                )
+                st.plotly_chart(fig, use_container_width=True,
+                                config={"displayModeBar": False, "scrollZoom": False, "doubleClick": False})
 
             st.markdown(
                 '<div style="font-family:\'Sora\',sans-serif;font-size:0.9rem;font-weight:600;'
@@ -1298,23 +1153,17 @@ with tab_mapa_ind:
     )
 
 # ══════════════════════════════════════════════
-# TAB 4 — EVOLUCIÓN DE VARIABLES (AL FINAL)
+# TAB 4 — EVOLUCIÓN DE VARIABLES
 # ══════════════════════════════════════════════
 with tab_evol:
 
     col_var_comp, col_provs_comp = st.columns([1, 2], gap="medium")
 
-    # =========================
-    # DEFAULTS DEL TAB EVOL
-    # =========================
-    DEFAULT_VAR_EVOL = "Cantidad de empresas"   # 👈 AJUSTÁ si en tu Excel se llama distinto
+    DEFAULT_VAR_EVOL   = "empresas_indus"
     DEFAULT_PROVS_EVOL = ["Córdoba", "Santa Fe"]
 
-    # -------- Variable (selectbox)
     with col_var_comp:
-        # si existe la variable default, la usamos; si no, caemos a la primera
         _idx_var = VARIABLES_EVO.index(DEFAULT_VAR_EVOL) if DEFAULT_VAR_EVOL in VARIABLES_EVO else 0
-
         var_comp = st.selectbox(
             "Variable",
             options=VARIABLES_EVO,
@@ -1322,13 +1171,10 @@ with tab_evol:
             key="sel_var_comp",
         )
 
-    # -------- Provincias (multiselect)
     with col_provs_comp:
-        # armamos defaults solo con las que existan en el Excel
         _default_provs = [p for p in DEFAULT_PROVS_EVOL if p in PROVINCIAS_LIST]
         if not _default_provs:
             _default_provs = PROVINCIAS_LIST[:1] if PROVINCIAS_LIST else []
-
         seleccionadas = st.multiselect(
             "Provincias (hasta 4)",
             options=PROVINCIAS_LIST,
@@ -1336,7 +1182,6 @@ with tab_evol:
             key="sel_provs_comp",
         )
 
-    # Guards
     if len(seleccionadas) < 1:
         st.info("Seleccioná al menos 1 provincia.")
         st.stop()
@@ -1344,7 +1189,6 @@ with tab_evol:
         st.warning("Máximo 4 provincias. Sacá alguna de la selección.")
         st.stop()
 
-    # 1) Gráfico principal (línea)
     with st.container(border=True):
         st.plotly_chart(
             fig_comp_linea(seleccionadas, var_comp),
@@ -1352,9 +1196,6 @@ with tab_evol:
             config={"displayModeBar": False},
         )
 
-    # ... (desde acá seguí con tu código actual de tabla, etc.)
-    # 2) Tabla con los datos que alimentan el gráfico
-    #    (filas = período, columnas = provincias)
     rows = []
     for pname in seleccionadas:
         periods, values, _ = get_serie(pname, var_comp)
@@ -1366,30 +1207,15 @@ with tab_evol:
         st.info("No hay datos para mostrar en la tabla con esta selección.")
     else:
         df_long = pd.DataFrame(rows)
-
-        # Intento de ordenamiento temporal (si existe period_num)
-        # (en anual/trim/art ya viene ordenado en get_serie, pero esto evita mezclas)
-        # Pivot a formato ancho
         df_wide = df_long.pivot_table(
-            index="Período",
-            columns="Provincia",
-            values="Valor",
-            aggfunc="first"
+            index="Período", columns="Provincia", values="Valor", aggfunc="first"
         ).reset_index()
 
-        # Formateo “suave” para visual (no rompe el dato)
-        # - ART suele ser % ya (ej 3.4). Si querés otro formato, lo ajustamos.
         def _fmt_cell(x):
-            if x is None or pd.isna(x):
-                return "—"
-            # si parece entero grande, lo muestro como entero
-            try:
-                xf = float(x)
-            except:
-                return str(x)
-            if abs(xf) >= 1000:
-                return fmt_int_es(xf)
-            # si es decimal “normal”
+            if x is None or pd.isna(x): return "—"
+            try: xf = float(x)
+            except: return str(x)
+            if abs(xf) >= 1000: return fmt_int_es(xf)
             return f"{xf:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
         df_show = df_wide.copy()
