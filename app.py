@@ -10,6 +10,19 @@ import streamlit as st
 import pandas as pd
 # ... (tus imports normales)
 
+
+
+# ══ DEBUG TEMPORAL ══
+import pandas as pd
+df_debug = pd.read_excel("data/vs_code.xlsx", sheet_name="anual", engine="openpyxl")
+variables = df_debug.iloc[:, 1].dropna().unique().tolist()
+st.write("Variables en anual:", variables)
+
+df_debug2 = pd.read_excel("data/vs_code.xlsx", sheet_name="trim", engine="openpyxl")
+variables2 = df_debug2.iloc[:, 1].dropna().unique().tolist()
+st.write("Variables en trim:", variables2)
+st.stop()
+# ══ FIN DEBUG ══
 # ─────────────────────────────────────────────
 # Config
 # ─────────────────────────────────────────────
