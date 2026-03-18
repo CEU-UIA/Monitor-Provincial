@@ -6,23 +6,7 @@ import pandas as pd
 import base64
 import json
 
-import streamlit as st
-import pandas as pd
-# ... (tus imports normales)
 
-
-
-# ══ DEBUG TEMPORAL ══
-import pandas as pd
-df_debug = pd.read_excel("data/vs_code.xlsx", sheet_name="anual", engine="openpyxl")
-variables = df_debug.iloc[:, 1].dropna().unique().tolist()
-st.write("Variables en anual:", variables)
-
-df_debug2 = pd.read_excel("data/vs_code.xlsx", sheet_name="trim", engine="openpyxl")
-variables2 = df_debug2.iloc[:, 1].dropna().unique().tolist()
-st.write("Variables en trim:", variables2)
-st.stop()
-# ══ FIN DEBUG ══
 # ─────────────────────────────────────────────
 # Config
 # ─────────────────────────────────────────────
@@ -110,10 +94,10 @@ MAPA_IND_KIND = {
 }
 
 # Nombres exactos de variables en el Excel para las 4 KPI cards
-KPI_VAR_EMP     = "Cantidad de empresas industriales"        # empresas industriales  → anual
-KPI_VAR_EXPO    = "Expo MOA+MOI (M u$s)"                     # exportaciones          → anual
+KPI_VAR_EMP     = "empresas_indus"        # empresas industriales  → anual
+KPI_VAR_EXPO    = "expo_moa_moi"                     # exportaciones          → anual
 # Empleo: se busca por coincidencia parcial case-insensitive en VARS_TRIM
-_KPI_PUESTOS_KEYWORD = "empleo industrial"   # substring para encontrar la variable trim
+_KPI_PUESTOS_KEYWORD = "empleo_indus"   # substring para encontrar la variable trim
 
 def _is_pct_var(var: str) -> bool:
     return MAPA_IND_KIND.get(var) == "pct"
