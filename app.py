@@ -9,14 +9,14 @@ import json
 import streamlit as st
 import pandas as pd
 # ... (tus imports normales)
-
 # ══ DEBUG TEMPORAL ══
 import pandas as pd
-df_debug_anual = pd.read_excel("data/vs_code.xlsx", sheet_name="anual", engine="openpyxl")
-df_debug_trim  = pd.read_excel("data/vs_code.xlsx", sheet_name="trim",  engine="openpyxl")
-st.write("ANUAL cols:", df_debug_anual.columns.tolist())
-st.write("TRIM cols:",  df_debug_trim.columns.tolist())
-st.stop()  # ← para que no cargue el resto de la app
+df_debug_trim = pd.read_excel("data/vs_code.xlsx", sheet_name="trim", engine="openpyxl")
+
+st.write("TRIM primeras 5 cols:", df_debug_trim.columns[:5].tolist())
+st.write("TRIM últimas 5 cols:", df_debug_trim.columns[-5:].tolist())
+st.write("TRIM total columnas:", len(df_debug_trim.columns))
+st.stop()
 # ══ FIN DEBUG ══
 
 # ─────────────────────────────────────────────
