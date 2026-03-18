@@ -13,12 +13,22 @@ import pandas as pd
 import pandas as pd
 df_debug_trim = pd.read_excel("data/vs_code.xlsx", sheet_name="trim", engine="openpyxl")
 
-st.write("TRIM primeras 5 cols:", df_debug_trim.columns[:5].tolist())
-st.write("TRIM últimas 5 cols:", df_debug_trim.columns[-5:].tolist())
-st.write("TRIM total columnas:", len(df_debug_trim.columns))
-st.stop()
-# ══ FIN DEBUG ══
+# Simular trim_order en las últimas 5 columnas
+def trim_order(s):
+    try:
+        p = str(s).split("-")
+        num = {"I":1,"II":2,"III":3,"IV":4}.get(p[0].strip(), 0)
+        yr  = int(p[1].strip())
+        yr  = yr+2000 if yr<50 else yr+1900
+        return yr*10 + num
+    except:
+        return 0
 
+ultimas = df_debug_trim.columns[-5:].tolist()
+for c in ultimas:
+    st.write(f"'{c}' → {trim_order(c)}")
+
+st.stop()
 # ─────────────────────────────────────────────
 # Config
 # ─────────────────────────────────────────────
