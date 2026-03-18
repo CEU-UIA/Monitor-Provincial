@@ -7,6 +7,16 @@ import base64
 import json
 
 
+# ══ DEBUG TEMPORAL ══
+import pandas as pd
+df_debug = pd.read_excel("data/vs_code.xlsx", sheet_name="anual", engine="openpyxl")
+variables = df_debug.iloc[:, 1].dropna().unique().tolist()
+st.write("Variables en anual:", variables)
+st.stop()
+# ══ FIN DEBUG ══
+
+
+
 # ─────────────────────────────────────────────
 # Config
 # ─────────────────────────────────────────────
