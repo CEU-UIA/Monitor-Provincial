@@ -6,6 +6,18 @@ import pandas as pd
 import base64
 import json
 
+import streamlit as st
+import pandas as pd
+# ... (tus imports normales)
+
+# ══ DEBUG TEMPORAL ══
+import pandas as pd
+df_debug_anual = pd.read_excel("data/vs_code.xlsx", sheet_name="anual", engine="openpyxl")
+df_debug_trim  = pd.read_excel("data/vs_code.xlsx", sheet_name="trim",  engine="openpyxl")
+st.write("ANUAL cols:", df_debug_anual.columns.tolist())
+st.write("TRIM cols:",  df_debug_trim.columns.tolist())
+st.stop()  # ← para que no cargue el resto de la app
+# ══ FIN DEBUG ══
 
 # ─────────────────────────────────────────────
 # Config
