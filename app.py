@@ -71,26 +71,25 @@ LABEL_ART         = "Alícuota promedio ART"
 
 
 MAPA_IND_PERMITIDAS = [
-    "VAB por 1000 habitantes",
-    "Empleo formal cada 1.000 habitantes",
-    "Empleo industrial cada 1.000 habitantes",
-    "Industria / VAB Total",
-    "MOA+MOI / Expo",
-    "Empresas industriales cada 1.000 habitantes",
-    "Empresas cada 1.000 habitantes",
+    "vab",
+    "empleo",
+    "empleo_indus",
+    "vab_indus",
+    "expo_moa_moi",
+    "empresas_indus",
+    "empresas",
     LABEL_ART,
 ]
 
 MAPA_IND_KIND = {
-    "Industria / VAB Total": "pct",
-    "MOA+MOI / Expo": "pct",
-    LABEL_ART: "pct",
-    # el resto son niveles
-    "VAB por 1000 habitantes": "int",
-    "Empleo formal cada 1.000 habitantes": "int",
-    "Empleo industrial cada 1.000 habitantes": "int",
-    "Empresas industriales cada 1.000 habitantes": "int",
-    "Empresas cada 1.000 habitantes": "int",
+    "vab_indus":      "pct",
+    "expo_moa_moi":   "pct",
+    LABEL_ART:        "pct",
+    "vab":            "int",
+    "empleo":         "int",
+    "empleo_indus":   "int",
+    "empresas_indus": "int",
+    "empresas":       "int",
 }
 
 # Nombres exactos de variables en el Excel para las 4 KPI cards
