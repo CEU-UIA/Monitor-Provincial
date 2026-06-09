@@ -60,7 +60,7 @@ st.markdown("""
 # ─────────────────────────────────────────────
 # Constantes
 # ─────────────────────────────────────────────
-VS_CODE_PATH      = "data/vs_code.xlsx"
+VS_CODE_PATH      = "data/base_provincias_dashboard.xlsx"
 SHEET_ANUAL       = "anual"
 SHEET_TRIM        = "trim"
 SHEET_ART         = "art"
