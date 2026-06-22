@@ -41,13 +41,83 @@ import requests
 # ============================================================
 # URLs
 # ============================================================
+# ============================================================
+# URLs dinámicas
+# ============================================================
 
-URL_EMPLEO = "https://www.argentina.gob.ar/sites/default/files/provinciales_serie_empleo_trimestral_2dig_5.xlsx"
-URL_EMPRESAS = "https://www.argentina.gob.ar/sites/default/files/provinciales_serie_empresas1_1.xlsx"
+URL_BASE_ARGENTINA = "https://www.argentina.gob.ar/sites/default/files"
+
+PATRON_EMPLEO = URL_BASE_ARGENTINA + "/provinciales_serie_empleo_trimestral_2dig_{version}.xlsx"
+PATRON_EMPRESAS = URL_BASE_ARGENTINA + "/provinciales_serie_empresas1_{version}.xlsx"
 URL_VAB = "https://repositorio.cepal.org/server/api/core/bitstreams/539fcce5-8977-4061-a222-fbfd7358a35f/content"
 URL_EXPO = "https://www.indec.gob.ar/ftp/cuadros/economia/sh_opex_regiones_economicas_grubros_1993_2025.xls"
 
+def url_existe(url: str) -> bool:
+    """
+    Verifica si una URL existe.
+    Primero intenta HEAD; si el servidor no lo permite, intenta GET liviano.
+    """
+    headers = {"User-Agent": "Mozilla/5.0"}
 
+    try:
+        r = requests.head(url, headers=headers, timeout=20, allow_redirects=True)
+
+        if r.status_code == 200:
+            return True
+
+        # Algunos servidores no aceptan HEAD correctamente
+        if r.status_code in [403, 405]:
+            r = requests.get(url, headers=headers, timeout=30, stream=True)
+            return r.status_code == 200
+
+        return False
+
+    except requests.RequestException:
+        return False
+
+
+def encontrar_ultima_url(
+    patron_url: str,
+    version_min: int = 1,
+    version_max: int = 30,
+) -> str:
+    """
+    Busca la última versión disponible de una URL con patrón.
+
+    Ejemplo:
+        patron_url = ".../provinciales_serie_empresas1_{version}.xlsx"
+
+    Devuelve:
+        URL de la versión más alta que existe.
+    """
+    ultima_url_valida = None
+    ultima_version_valida = None
+
+    for version in range(version_min, version_max + 1):
+        url = patron_url.format(version=version)
+
+        if url_existe(url):
+            ultima_url_valida = url
+            ultima_version_valida = version
+            print(f"Detectada versión disponible: {version} -> {url}")
+
+    if ultima_url_valida is None:
+        raise ValueError(f"No encontré ninguna URL válida para el patrón: {patron_url}")
+
+    print(f"Última versión detectada: {ultima_version_valida}")
+    return ultima_url_valida
+
+URL_EMPLEO = encontrar_ultima_url(
+    PATRON_EMPLEO,
+    version_min=1,
+    version_max=30,
+)
+
+URL_EMPRESAS = encontrar_ultima_url(
+    PATRON_EMPRESAS,
+    version_min=1,
+    version_max=30,
+)
 # ============================================================
 # ARCHIVOS
 # ============================================================
@@ -55,12 +125,12 @@ URL_EXPO = "https://www.indec.gob.ar/ftp/cuadros/economia/sh_opex_regiones_econo
 DIR_DATA = Path("data_fuentes")
 DIR_DATA.mkdir(exist_ok=True)
 
-ARCHIVO_EMPLEO = DIR_DATA / "provinciales_serie_empleo_trimestral_2dig_5.xlsx"
-ARCHIVO_EMPRESAS = DIR_DATA / "provinciales_serie_empresas1_1.xlsx"
+ARCHIVO_EMPLEO = DIR_DATA / "empleo_trimestral_latest.xlsx"
+ARCHIVO_EMPRESAS = DIR_DATA / "empresas_anual_latest.xlsx"
 ARCHIVO_VAB = DIR_DATA / "vab_cepal_provincias.xlsx"
 ARCHIVO_EXPO = DIR_DATA / "sh_opex_regiones_economicas_grubros_1993_2025.xls"
 
-ARCHIVO_SALIDA = Path("base_provincias_dashboard.xlsx")
+ARCHIVO_SALIDA = Path("data") / "base_provincias_dashboard.xlsx"
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -211,18 +281,25 @@ def provincia_desde_hoja(sheet_name: str) -> Optional[str]:
     return limpiar_provincia(sheet_name)
 
 
-def descargar(url: str, destino: Path) -> None:
-    if destino.exists():
+def descargar(url: str, destino: Path, forzar: bool = False) -> None:
+    """
+    Descarga un archivo.
+
+    Si forzar=False y el archivo ya existe, usa el archivo local.
+    Si forzar=True, lo vuelve a descargar aunque exista.
+    """
+    if destino.exists() and not forzar:
         print(f"Uso archivo local: {destino}")
         return
 
-    print(f"Descargando: {destino.name}")
+    print(f"Descargando: {url}")
 
     headers = {"User-Agent": "Mozilla/5.0"}
     r = requests.get(url, headers=headers, timeout=120)
     r.raise_for_status()
 
     destino.write_bytes(r.content)
+
     print(f"Archivo descargado: {destino}")
 
 
@@ -498,7 +575,7 @@ def procesar_empresas_anual() -> pd.DataFrame:
         print(f"Procesando empresas: {sheet} -> {provincia}")
 
         df = pd.read_excel(ARCHIVO_EMPRESAS, sheet_name=sheet, header=None)
-        columnas = detectar_columnas_anios_generico(df, 1996, 2023)
+        columnas = detectar_columnas_anios_generico(df, 1996, 2024)
 
         for variable, fila_excel in filas_variables.items():
             fila_idx = fila_excel - 1
