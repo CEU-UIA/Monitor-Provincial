@@ -54,6 +54,18 @@ st.markdown("""
     border-radius: 10px !important;
     border: 1.5px solid #e2e8f4 !important;
   }
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.65rem;
+    margin-bottom: 1.5rem;
+  }
+  @media (max-width: 720px) {
+    .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 430px) {
+    .kpi-grid { grid-template-columns: 1fr; }
+  }
 </style>
 """, unsafe_allow_html=True)
 
@@ -78,8 +90,11 @@ MAPA_IND_RATIOS = {
 
 # ✅ Nombres exactos de variables en el Excel
 KPI_VAR_EMP          = "empresas_indus"
+KPI_VAR_EMP_TOTAL    = "empresas"
 KPI_VAR_EXPO         = "expo_moa_moi"
+KPI_VAR_EXPO_TOTAL   = "expo"
 _KPI_PUESTOS_KEYWORD = "empleo_indus"
+KPI_VAR_PUESTOS_TOTAL = "empleo"
 
 def _is_pct_var(var: str) -> bool:
     return False  # en evol no hay pct hardcodeadas
@@ -355,9 +370,88 @@ def get_serie(prov, variable):
               .sort_values("period_num").dropna(subset=["value"])
         return sub["period"].tolist(), sub["value"].tolist(), sub["period_num"].tolist()
 
-def kpi_last(periods, values):
-    if not periods: return None, None
-    return periods[-1], values[-1]
+def get_kpi_snapshot(prov, numerator_var, provincial_total_var):
+    """
+    Devuelve el último dato absoluto disponible y dos participaciones para el
+    mismo período:
+      - participación de la provincia en el total nacional del numerador;
+      - participación del numerador en el total de la provincia.
+
+    La participación nacional solo se informa cuando están presentes las 24
+    jurisdicciones, para evitar mostrar un total país parcial durante una
+    actualización de la base.
+    """
+    empty = {
+        "period": None,
+        "value": None,
+        "share_national": None,
+        "share_provincial": None,
+    }
+
+    source = _source(numerator_var)
+    if source != _source(provincial_total_var):
+        return empty
+
+    if source == "anual":
+        df = DF_ANUAL
+    elif source == "trim":
+        df = DF_TRIM
+    else:
+        return empty
+
+    if df.empty:
+        return empty
+
+    num_prov = df[
+        (df["provincia"] == prov) &
+        (df["variable"] == numerator_var)
+    ].dropna(subset=["value"])
+    den_prov = df[
+        (df["provincia"] == prov) &
+        (df["variable"] == provincial_total_var)
+    ].dropna(subset=["value"])
+
+    common_periods = sorted(
+        set(num_prov["period_num"]).intersection(den_prov["period_num"])
+    )
+    if not common_periods:
+        return empty
+
+    period_num = common_periods[-1]
+    num_row = num_prov[num_prov["period_num"] == period_num].iloc[-1]
+    den_row = den_prov[den_prov["period_num"] == period_num].iloc[-1]
+    value = float(num_row["value"])
+    provincial_total = float(den_row["value"])
+
+    national_by_province = (
+        df[
+            (df["variable"] == numerator_var) &
+            (df["period_num"] == period_num)
+        ]
+        .dropna(subset=["value"])
+        .groupby("provincia")["value"]
+        .first()
+    )
+    has_full_country = set(PROVINCIAS_LIST).issubset(national_by_province.index)
+    national_total = (
+        national_by_province.reindex(PROVINCIAS_LIST).sum(min_count=len(PROVINCIAS_LIST))
+        if has_full_country else None
+    )
+
+    share_national = None
+    if national_total is not None and not pd.isna(national_total) and national_total != 0:
+        share_national = value / float(national_total) * 100
+
+    share_provincial = None
+    if not pd.isna(provincial_total) and provincial_total != 0:
+        share_provincial = value / provincial_total * 100
+
+    return {
+        "period": str(num_row["period"]),
+        "value": value,
+        "share_national": share_national,
+        "share_provincial": share_provincial,
+    }
 
 # ─────────────────────────────────────────────
 # ✅ Calcular ratio para mapa por indicadores
@@ -484,12 +578,6 @@ def get_insight_y_vab(prov_name):
 # ─────────────────────────────────────────────
 # 4 KPI cards
 # ─────────────────────────────────────────────
-STYLE_GRID_4 = (
-    "display:grid;"
-    "grid-template-columns:repeat(4,1fr);"
-    "gap:0.65rem;"
-    "margin-bottom:1.5rem;"
-)
 CARD_STYLE = (
     "background:white;"
     "border:1.5px solid #e2e8f4;"
@@ -497,6 +585,10 @@ CARD_STYLE = (
     "padding:0.9rem 0.8rem;"
     "border-top:4px solid #1B2D6B;"
     "box-shadow:0 2px 6px rgba(0,0,0,0.04);"
+    "display:flex;"
+    "flex-direction:column;"
+    "min-height:11.5rem;"
+    "box-sizing:border-box;"
 )
 LABEL_STYLE = (
     "font-family:'DM Mono',monospace;"
@@ -532,14 +624,45 @@ PERIOD_STYLE = (
     "font-family:'DM Mono',monospace;"
     "font-size:0.6rem;"
     "color:#9aa3b2;"
+    "margin-top:auto;"
+)
+SHARES_STYLE = (
+    "display:flex;"
+    "flex-direction:column;"
+    "gap:0.32rem;"
+    "border-top:1px solid #edf1f7;"
+    "margin-top:0.5rem;"
+    "padding-top:0.45rem;"
+)
+SHARE_ROW_STYLE = (
+    "font-family:'Sora',sans-serif;"
+    "font-size:0.58rem;"
+    "line-height:1.25;"
+    "color:#64748b;"
+)
+SHARE_VALUE_STYLE = (
+    "font-family:'DM Mono',monospace;"
+    "font-size:0.64rem;"
+    "font-weight:700;"
+    "color:#1B2D6B;"
 )
 
-def _kpi_card(label, value, period):
+def _kpi_card(label, value, period, shares=None):
     vs = VALUE_STYLE_SM if len(str(value)) > 9 else VALUE_STYLE
+    shares_html = ""
+    if shares:
+        rows = "".join(
+            f'<div style="{SHARE_ROW_STYLE}">'
+            f'<span style="{SHARE_VALUE_STYLE}">{share_value}</span> {share_label}'
+            f'</div>'
+            for share_value, share_label in shares
+        )
+        shares_html = f'<div style="{SHARES_STYLE}">{rows}</div>'
     return (
         f'<div style="{CARD_STYLE}">'
         f'<div style="{LABEL_STYLE}">{label}</div>'
         f'<div style="{vs}">{value}</div>'
+        f'{shares_html}'
         f'<div style="{PERIOD_STYLE}">{period}</div>'
         f'</div>'
     )
@@ -550,28 +673,45 @@ def render_4_kpis(prov):
     vab_pct, vab_yr = get_vab_industria(prov)
     cards.append(_kpi_card("Industria en el VAB", vab_pct, vab_yr))
 
-    p, v, _ = get_serie(prov, KPI_VAR_EMP)
-    lp, lv  = kpi_last(p, v)
+    snapshot = get_kpi_snapshot(prov, KPI_VAR_EMP, KPI_VAR_EMP_TOTAL)
     cards.append(_kpi_card("Empresas industriales",
-                            fmt_int_es(lv) if lv is not None else "—",
-                            str(lp) if lp else "—"))
+                            fmt_int_es(snapshot["value"]),
+                            snapshot["period"] or "—",
+                            shares=[
+                                (fmt_pct_plain(snapshot["share_national"]),
+                                 "de las empresas industriales del país"),
+                                (fmt_pct_plain(snapshot["share_provincial"]),
+                                 "de las empresas de la provincia"),
+                            ]))
 
     if KPI_VAR_PUESTOS:
-        p, v, _ = get_serie(prov, KPI_VAR_PUESTOS)
-        lp, lv  = kpi_last(p, v)
+        snapshot = get_kpi_snapshot(
+            prov, KPI_VAR_PUESTOS, KPI_VAR_PUESTOS_TOTAL
+        )
         cards.append(_kpi_card("Empleo industrial",
-                                fmt_int_es(lv) if lv is not None else "—",
-                                str(lp) if lp else "—"))
+                                fmt_int_es(snapshot["value"]),
+                                snapshot["period"] or "—",
+                                shares=[
+                                    (fmt_pct_plain(snapshot["share_national"]),
+                                     "del empleo industrial nacional"),
+                                    (fmt_pct_plain(snapshot["share_provincial"]),
+                                     "del empleo total provincial"),
+                                ]))
     else:
         cards.append(_kpi_card("Empleo industrial", "—", "—"))
 
-    p, v, _ = get_serie(prov, KPI_VAR_EXPO)
-    lp, lv  = kpi_last(p, v)
+    snapshot = get_kpi_snapshot(prov, KPI_VAR_EXPO, KPI_VAR_EXPO_TOTAL)
     cards.append(_kpi_card("Expo MOA+MOI (M u$s)",
-                            fmt_int_es(lv) if lv is not None else "—",
-                            str(lp) if lp else "—"))
+                            fmt_int_es(snapshot["value"]),
+                            snapshot["period"] or "—",
+                            shares=[
+                                (fmt_pct_plain(snapshot["share_national"]),
+                                 "de las exportaciones MOA+MOI nacionales"),
+                                (fmt_pct_plain(snapshot["share_provincial"]),
+                                 "de las exportaciones provinciales"),
+                            ]))
 
-    return f'<div style="{STYLE_GRID_4}">{"".join(cards)}</div>'
+    return f'<div class="kpi-grid">{"".join(cards)}</div>'
 
 # ─────────────────────────────────────────────
 # Plotly helpers
