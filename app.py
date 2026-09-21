@@ -626,6 +626,13 @@ PERIOD_STYLE = (
     "color:#9aa3b2;"
     "margin-top:auto;"
 )
+SOURCE_STYLE = (
+    "font-family:'DM Mono',monospace;"
+    "font-size:0.5rem;"
+    "line-height:1.25;"
+    "color:#aab0c0;"
+    "margin-top:0.2rem;"
+)
 SHARES_STYLE = (
     "display:flex;"
     "flex-direction:column;"
@@ -647,7 +654,7 @@ SHARE_VALUE_STYLE = (
     "color:#1B2D6B;"
 )
 
-def _kpi_card(label, value, period, shares=None):
+def _kpi_card(label, value, period, shares=None, source=None):
     vs = VALUE_STYLE_SM if len(str(value)) > 9 else VALUE_STYLE
     shares_html = ""
     if shares:
@@ -658,12 +665,17 @@ def _kpi_card(label, value, period, shares=None):
             for share_value, share_label in shares
         )
         shares_html = f'<div style="{SHARES_STYLE}">{rows}</div>'
+    source_html = (
+        f'<div style="{SOURCE_STYLE}">Fuente: {source}</div>'
+        if source else ""
+    )
     return (
         f'<div style="{CARD_STYLE}">'
         f'<div style="{LABEL_STYLE}">{label}</div>'
         f'<div style="{vs}">{value}</div>'
         f'{shares_html}'
         f'<div style="{PERIOD_STYLE}">{period}</div>'
+        f'{source_html}'
         f'</div>'
     )
 
@@ -671,7 +683,9 @@ def render_4_kpis(prov):
     cards = []
 
     vab_pct, vab_yr = get_vab_industria(prov)
-    cards.append(_kpi_card("Industria en el VAB", vab_pct, vab_yr))
+    cards.append(_kpi_card(
+        "Industria en el VAB", vab_pct, vab_yr, source="CEPAL"
+    ))
 
     snapshot = get_kpi_snapshot(prov, KPI_VAR_EMP, KPI_VAR_EMP_TOTAL)
     cards.append(_kpi_card("Empresas industriales",
@@ -682,7 +696,8 @@ def render_4_kpis(prov):
                                  "de las empresas industriales del país"),
                                 (fmt_pct_plain(snapshot["share_provincial"]),
                                  "de las empresas de la provincia"),
-                            ]))
+                            ],
+                            source="OEDE – Secretaría de Trabajo de la Nación"))
 
     if KPI_VAR_PUESTOS:
         snapshot = get_kpi_snapshot(
@@ -696,9 +711,13 @@ def render_4_kpis(prov):
                                      "del empleo industrial nacional"),
                                     (fmt_pct_plain(snapshot["share_provincial"]),
                                      "del empleo total provincial"),
-                                ]))
+                                ],
+                                source="OEDE – Secretaría de Trabajo de la Nación"))
     else:
-        cards.append(_kpi_card("Empleo industrial", "—", "—"))
+        cards.append(_kpi_card(
+            "Empleo industrial", "—", "—",
+            source="OEDE – Secretaría de Trabajo de la Nación"
+        ))
 
     snapshot = get_kpi_snapshot(prov, KPI_VAR_EXPO, KPI_VAR_EXPO_TOTAL)
     cards.append(_kpi_card("Expo MOA+MOI (M u$s)",
@@ -709,7 +728,8 @@ def render_4_kpis(prov):
                                  "de las exportaciones MOA+MOI nacionales"),
                                 (fmt_pct_plain(snapshot["share_provincial"]),
                                  "de las exportaciones provinciales"),
-                            ]))
+                            ],
+                            source="INDEC"))
 
     return f'<div class="kpi-grid">{"".join(cards)}</div>'
 
